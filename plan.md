@@ -1,741 +1,1323 @@
-# Patch Management / System Architecture
-
-**Agent:** Intillegent deplyment kit  
-**Runtime:** Pi or OpenCode  
-**Backend:** Python, FastAPI, and SQLite  
-**Status:** proposed architecture and implementation approach; the described features are not yet completed functionality.
-
-![Patch Management / System Architecture](architecture-black.svg)
-
-## 1. Objective and scope
-
-The project centers on an agent that observes a Linux VM fleet, explains deployment and security-update needs, proposes exact changes, obtains operator approval, executes Ansible workflows through MCP, verifies results, and reports failures or recovery.
-
-The agent reasons about evidence. MCP adapters expose controlled operations. Ansible performs changes. osquery supplies system facts. Semaphore provides execution templates, scheduling, task output, and run history.
-
-The first supported environment is Debian Minimal with APT and systemd. The initial lab has three target VMs and one control node. Host count, addresses, groups, application profiles, model providers, thresholds, and rollout settings are described in configuration, allowing the same agent to work with different lab environments.
-
-The project includes:
-
-- A reproducible lab and documented setup/reset procedure.
-- The named agent, with Pi and OpenCode runtime adapters.
-- Fleet-aware osquery MCP tools and approval-controlled Ansible MCP tools.
-- Discovery, planning, preflight, deployment, verification, recovery, and reporting workflows.
-- Automated tests, a scenario catalog, and a repeatable demonstration.
-- Configuration examples, structured reports, version locks, and the architecture diagram.
-
-Kernel upgrades, OS release upgrades, database migrations, arbitrary shell deployments, and automatic reboots are outside the first release. Later support would involve dedicated profiles and separate recovery tests.
-
-## 2. Architecture and ownership
-
-| Component | Responsibility | Location |
-| --- | --- | --- |
-| Operator | Supplies goals, reviews evidence, approves or rejects a specific plan | Pi/OpenCode interface |
-| Intillegent deplyment kit | Collects evidence, explains findings, proposes plans, invokes tools, interprets results | Control node |
-| Pi/OpenCode adapter | Loads agent identity, instructions, model settings, MCP connections, and UI hooks | Control node |
-| Model provider | Supplies reasoning and tool selection through the selected runtime | Hosted service or configured local endpoint |
-| osquery MCP fleet adapter | Runs named read-only queries on inventory hosts; returns normalized results | Control node |
-| Execution MCP facade | Validates plans and approvals before forwarding permitted execution requests | Control node |
-| Semaphore MCP backend | Connects approved execution requests and status reads to Semaphore's API | Private control-node service |
-| Semaphore + Ansible Core | Runs versioned task templates and playbooks over SSH | Control node |
-| osquery + SSH + Python + APT | Exposes facts and executes approved package/service operations | Target VMs |
-| Debian advisory data | Supplies release-specific vulnerability and fixed-version information | Cached on control node |
-| FastAPI control API | Handles authenticated operator approval, plan/run reads, and report access | Control node |
-| Plan/event store | Stores inventory snapshots, plans, approvals, task IDs, and host outcomes | Control-node SQLite database |
-
-Communication paths:
-
-1. Operator -> agent -> model: goal, evidence, proposed plan, and approval interaction.
-2. Agent -> osquery MCP -> SSH -> osquery on a target: discovery requests and JSON evidence.
-3. Agent -> execution MCP facade -> Semaphore MCP -> Semaphore API -> Ansible -> SSH: approved deployment.
-4. Task output and host results return through the execution path to the agent and operator.
-5. Advisory data is joined with package inventory before proposing security remediation.
-
-The agent has no target SSH key or unrestricted Semaphore token. Backend credentials belong to the adapters and execution service. Only the execution facade is exposed to the agent; the raw mutation-capable MCP backend is private. The same separation applies to built-in shell/file tools: their accessible files, credentials, and network paths exclude the private execution backend and state store.
-
-The community [Semaphore MCP server](https://github.com/cloin/semaphore-mcp) offers task-launch and task-output tools. The official [AAP MCP server](https://github.com/ansible/aap-mcp-server) targets Ansible Automation Platform; it is not the selected Ansible Core/Semaphore integration.
-
-## 3. Runtime, providers, and agent identity
-
-### 3.1 Pi or OpenCode
-
-Each runtime has a small adapter sharing the same MCP contracts, agent instructions, plan schema, policy, and reporting format. Implementation begins with an end-to-end workflow on one runtime, followed by validation of the same workflow on the other.
-
-Runtime-specific responsibilities are startup, session events, provider/model selection, MCP configuration, approval interaction, and display. Deployment rules belong to the shared services, so switching runtime cannot change the approved execution scope.
-
-Both upstream runtimes document MCP support: [Pi MCP](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/mcp.md) and [OpenCode MCP](https://opencode.ai/docs/mcp-servers/). Project compatibility is tied to pinned, tested releases, making the setup reproducible across machines.
-
-### 3.2 Provider support
-
-Provider support comes from the chosen runtime, including its supported providers and compatible custom endpoints. Authentication and provider SDK integration remain with the upstream runtime.
-
-The upstream provider catalog is the source of truth. With both adapters installed, the agent can offer the union of their catalogs and identify which runtime can serve each entry. A provider supported only by one runtime requires that runtime.
-
-[Pi providers](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md) and [OpenCode providers](https://opencode.ai/docs/providers/) document the current catalogs and authentication. Hosted, gateway, cloud, and local-model configurations remain available through those integrations.
-
-Provider selection and compatibility:
-
-- Runtime, provider, model, endpoint, and credential reference are selected through configuration or the runtime UI.
-- Catalog refreshes preserve upstream provider/model IDs and require no deployment-code changes.
-- Credentials remain in runtime credential storage or environment/secret references.
-- A session readiness check covers authentication, model availability, structured tool calls, and context capacity.
-- A connected provider is not proof that every model can run the tool workflow. Unsupported capabilities disable execution and explain the missing capability.
-- Each plan and run records the runtime, version, provider, and model.
-- Provider failure pauses reasoning; it does not launch another deployment.
-- Changing runtime/model during an unexecuted approved plan requires plan review again.
-- Provider fallback is explicit configuration, never an undocumented switch.
-
-The full upstream catalog remains accessible. Configured providers with available credentials receive live tests; the remaining entries are labeled as inherited support without live validation.
-
-### 3.3 Naming and future UI
-
-The agent is named **Intillegent deplyment kit** in its instructions, session header, reports, and examples. The architecture keeps the title **Patch Management / System Architecture**.
-
-The initial interface is the upstream UI with a named agent profile. A later [Pi extension](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/extensions.md) or [OpenCode plugin](https://opencode.ai/docs/plugins/) can add project labels, a theme, commands, status indicators, and approval display where supported. Branding is a separate follow-up; provider selection and authentication remain available through the runtime.
-
-## 4. Lab and dynamic environment
-
-### 4.1 Initial topology
-
-| Node | Role | Starting allocation |
-| --- | --- | --- |
-| control-01 | Agent, MCP services, Semaphore, Ansible, state store | 2 vCPU, 4 GB RAM, 20 GB disk |
-| vm-01 | Healthy canary / demo application | 1 vCPU, 1 GB RAM, 10 GB disk |
-| vm-02 | Second application target / failure scenarios | 1 vCPU, 1 GB RAM, 10 GB disk |
-| vm-03 | Mixed-release, offline, or new-host scenarios | 1 vCPU, 1 GB RAM, 10 GB disk |
-
-These allocations are starting values for the lab. Idle and active resource measurements determine whether they are sufficient. Local LLMs may need additional hardware; a hosted provider keeps model inference off the control node.
-
-The baseline is Debian 13 Minimal, with a Debian 12 profile for mixed-release testing. Release and package support are checked during lab preparation against [Debian's release information](https://www.debian.org/releases/).
-
-The lab can run on VirtualBox, libvirt, or Proxmox according to the available host. The reproducible setup documents one platform, while inventory and network requirements describe the equivalent setup on the others. Managed VMs run without a desktop environment.
-
-### 4.2 Network and bootstrap
-
-SSH and application traffic use a private VM network. Controlled outbound access covers package repositories, advisory refresh, and hosted providers. An offline profile uses a prepared package repository, advisory snapshot, and compatible local provider or recorded reasoning fixtures.
-
-Bootstrap installs osquery, SSH, Python, python3-apt, and the demo application's prerequisites. It also provisions trusted SSH host keys and an automation user. Discovery permissions cover the named queries, while approved playbooks have the privilege escalation needed for package and service operations.
-
-Provider credentials, SSH keys, Semaphore tokens, and the state database remain outside Git. Sample configuration contains credential references only.
-
-### 4.3 Inventory rules
-
-- Stable host IDs remain consistent across address and group-membership changes.
-- Each inventory entry records OS release, architecture, SSH fingerprint, environment, roles, application profile, and enable/disable state.
-- The initial inventory source is a file, behind an interface that can later support hypervisor or cloud discovery.
-- Host identity and freshness are checked during discovery and immediately before mutation.
-- Groups resolve to an explicit host list when a plan is created.
-- A new host never joins an already approved rollout automatically.
-- Removed/disabled hosts are excluded from new plans and blocked at execution even if an older plan included them.
-- An address change requires identity verification. An unexpected SSH-key change blocks execution.
-- Unsupported OS/package-manager profiles return unsupported, not an attempted APT command.
-- Provisioned clones have distinct machine identities and host keys.
-
-The following is the proposed project configuration, not native Pi/OpenCode configuration:
-
-~~~yaml
-backend:
-  framework: "fastapi"
-  database_path: "data/idk.sqlite3"
-
-agent:
-  name: "Intillegent deplyment kit"
-  runtime: "pi"                  # alternative: opencode
-  provider: "<upstream-provider-id>"
-  model: "<upstream-model-id>"
-  credential_ref: "<runtime-managed-reference>"
-
-environment:
-  name: "lab"
-  inventory_source: "inventory/lab.yml"
-  supported_releases: ["bookworm", "trixie"]
-
-discovery:
-  query_timeout_seconds: 30
-  parallel_hosts: 3
-  max_evidence_age_minutes: 15
-  advisory_max_age_hours: 24
-
-rollout:
-  canary_host: "vm-01"
-  batch_size: 1
-  parallel_mutations_per_host: 1
-  halt_after_canary_failure: true
-  continue_after_noncanary_unreachable: true
-  minimum_free_disk_mb: 1024
-  apt_lock_wait_seconds: 30
-  health_timeout_seconds: 60
-  approval_ttl_minutes: 30
-  reboot_policy: "report_only"
-
-recovery:
-  require_verified_backups: true
-  retain_previous_packages: true
-
-hosts:
-  - id: "vm-01"
-    address: "192.168.56.11"
-    ssh_user: "automation"
-    ssh_key_ref: "lab-controller-key"
-    ssh_fingerprint_ref: "known-hosts/vm-01"
-    environment: "lab"
-    groups: ["web", "canary"]
-    application_profile: "demo-http"
-    enabled: true
-~~~
-
-Configuration validation covers value ranges and relationships as well as YAML syntax. Mutation concurrency respects the profile's minimum healthy instances, and the canary belongs to the approved target set.
-
-## 5. MCP contracts
-
-Local MCP processes use stdio; service connections can use authenticated Streamable HTTP. Transport configuration is separate from tool logic.
-
-### 5.1 osquery fleet adapter
-
-Existing [OsqueryMcpServer](https://github.com/kousen/OsqueryMcpServer) exposes local osquery operations. Its [implementation](https://github.com/kousen/OsqueryMcpServer/blob/main/src/main/java/com/kousenit/osquerymcpserver/OsqueryService.java) is a reference, not an already complete remote-fleet adapter.
-
-The control-node adapter is a small Python service using an SSH library. It resolves a stable host ID from inventory, runs an allowlisted query through osqueryi, parses JSON, and tags every result with host identity and collection time. MCP does not run on every VM.
-
-The adapter exposes named query IDs for installed packages, OS identity, processes, listening ports, and service-related evidence. SQL templates are maintained in the repository. Validated filter values feed fixed command templates; the tool contract excludes free-form remote shell commands and arbitrary model-supplied SQL.
-
-An unavailable query, table, or permission appears as an explicit per-host error. Missing evidence is distinct from an empty successful result.
-
-### 5.2 Execution facade
-
-The Semaphore MCP backend sits behind a project-owned policy service. The agent cannot call its raw launch/admin tools directly. The facade owns plan validation, approval lookup, host locks, task correlation, and permitted execution scope.
-
-| Project tool | Inputs | Result / rule |
-| --- | --- | --- |
-| list_hosts | Environment and optional group filters | Validated hosts, roles, identity, capability flags |
-| query_hosts | Explicit host IDs, named query ID, validated filters | Timestamped evidence or per-host error |
-| evaluate_updates | Evidence snapshot and advisory snapshot IDs | Version-matched findings and available candidates |
-| create_plan | Findings, selected hosts, application profile | Validated immutable plan and hash |
-| get_plan | Plan ID | Exact proposed operations and current approval state |
-| execute_plan | Plan ID, approval reference, request ID | Existing/new run ID; no arbitrary extra variables |
-| get_run | Run ID | Job state and structured host outcomes |
-| get_run_output | Run ID, bounded cursor | Redacted output, task events, next cursor |
-| pause_run | Run ID | New hosts/batches paused; in-flight package transactions preserved |
-| reconcile_run | Run ID | Uncertain task/host state resolved without another launch |
-
-These are planned project contracts. They are not claims about exact upstream MCP tool names. The backend's run_task, get_task, and get_task_raw_output are mapped inside the facade.
-
-Approval is recorded through an authenticated operator action outside the model's tool set. The model cannot approve its own plan by sending approve=true, inventing an identity, or passing an approval token copied from unrelated output.
-
-All tools validate schemas, sizes, ownership, and host scope. Results include a schema version, request/run ID, host ID when relevant, UTC timestamp, data, and a machine-readable error with retry guidance. Logs and package names are data, never instructions to execute.
-
-## 6. Discovery and update classification
-
-1. Discovery resolves the current inventory and records a snapshot.
-2. The fleet adapter collects OS, release, architecture, and package name/version/source information.
-3. Named queries collect process and listening-port evidence where permitted.
-4. Analysis loads a timestamped Debian advisory snapshot.
-5. Matching considers the release, source package, binary-to-source mapping, and Debian package versions.
-6. Candidate evaluation checks the available fixed version and dependency changes for that release.
-7. Each finding includes evidence, an advisory reference, exposure context, a candidate version, and a confidence/status classification.
-
-The [deb_packages schema](https://github.com/osquery/osquery/blob/master/specs/linux/deb_packages.table) supplies installed package facts. Vulnerability metadata comes separately from the [Debian Security Tracker](https://security-tracker.debian.org/tracker/); the advisory-matching logic belongs to the project service.
-
-Version matching follows Debian comparison rules, including epochs, revisions, and backports. Simple numeric or string comparison is insufficient. An open port or running process supplies exposure context; it does not establish exploitation.
-
-Findings distinguish:
-
-| Classification | Meaning |
-| --- | --- |
-| current | No applicable update found in the available evidence |
-| patchable | Applicable finding with an available approved-source fixed version |
-| update_available | Candidate update without a confirmed security finding |
-| no_fixed_candidate | Finding exists; an installable fixed version was not resolved |
-| unknown | Evidence, mapping, release support, or advisory freshness is insufficient |
-| unsupported | Host/profile cannot be evaluated by the current adapters |
-
-Unknown findings remain unresolved in the report. The plan retains advisory timestamps and candidate provenance so the operator can assess the available evidence.
-
-Read-only discovery uses existing package metadata; refreshing APT metadata writes to the target and belongs to bootstrap or an approved execution stage. An authorized refresh before installation is followed by exact-version revalidation. A changed dependency closure or candidate invalidates the execution scope and leads to a new plan.
-
-## 7. Plan, approval, and durable state
-
-A plan is structured data validated independently of the model. Each plan contains:
-
-- Plan ID, schema version, creation time, expiry, environment, and operator request.
-- Explicit host IDs with identity and inventory/evidence snapshot references.
-- Current and proposed versions, repositories/artifact references, and full dependency changes.
-- Versioned application profile, task template, and Git commit for playbooks/configuration.
-- Preflight requirements, affected services, health assertions, and rollout order.
-- Backup/package-retention requirements and permitted recovery operations.
-- Reboot/downtime requirements, risks, and unresolved evidence.
-- Runtime/version/provider/model and a hash of the canonical execution fields.
-
-The operator sees the host list, package/dependency changes, downtime, canary, recovery method, and uncertainties before approving.
-
-Example plan fragment; placeholders are not executable values:
-
-~~~json
+# PLAN: who does what, in which order
+
+Working plan for the six members of the AI Patch Agent team (v2: aligned with the teacher's core, verified from its source code).
+
+Related files: [README.md](README.md) (concept), [SETUP.md](SETUP.md) (identical environment, **do it first**), [`docs/reference/PROJECT_FULL_REFERENCE.md`](docs/reference/PROJECT_FULL_REFERENCE.md) (all teacher documents **and the full source code of the core**), `docs/reference/ai-patch-agent-guide.html` (technical guide).
+
+> **What changed in v2:** the plan now relies on what the core *really does* (section 1B), not only on what the documents say. Four consequences: (1) the guide's `curl ... -d @agent.manifest.json` fails, so we use `scripts/submit_agent.py`; (2) the web UI activates agents with an **empty config**, so hosts are set afterwards through a new `PUT /tenant/{id}/config` endpoint; (3) every contract endpoint must answer in **under 10 seconds**; (4) the core must run **locally** (PostgreSQL included) for every integration test (section 5).
+
+---
+
+## 0. Start here
+
+**Everyone, in this order:**
+
+1. Read sections 1 to 8 of this file (30 min).
+2. Read the parts of `PROJECT_FULL_REFERENCE.md` listed for your role below.
+3. Complete `SETUP.md`, then run the contract simulation (section 5.5) once you have an API to test.
+4. Go to your own tasks in section 9.
+
+**Reading list** (section numbers refer to `PROJECT_FULL_REFERENCE.md`):
+
+| Member | Must read |
+|---|---|
+| **Everyone** | §0 (overview), §2 (integration contract), §4 (developer guide), §13 (real behavior of the core), §14 (pitfalls and checklist) |
+| Ahmed | §7 (manifest), §13.4 (submission format), §13.5 (what the core reads), §12-14 |
+| Taha | §1 (core installation), §11.2 (`database.py`), §13.8 (network and PostgreSQL), §13.11 (test scenario) |
+| Abderaouf | §2 section 7 (security rules), the technical guide HTML |
+| Wassim | §2 section 7, §11.4 (`security.py`), §11.12 (webhooks), §13.7 (alerts), §13.9 (security) |
+| Baha | §11.5 (`agent_gateway.py`: 10 s timeout), §13.3, §13.7 |
+| Dhia | §2, §6 (example `main.py`), §8 (Dockerfile), §11.5, §11.9, §11.10, §13.1 to §13.5, §13.10, §13.11 |
+
+---
+
+## 1. Platform facts that drive our design
+
+### 1A. Requirements from the contract
+
+Our agent is not only a CLI tool: it must be a **service** that the platform core can talk to.
+
+| Requirement | What it means for us |
+|---|---|
+| Independent HTTP service in its own Docker container | `api/` layer (FastAPI) on top of the agent logic. |
+| **Python must be used** | Already our case. |
+| 5 mandatory endpoints: `GET /health`, `POST /tenant/activate`, `POST /tenant/deactivate`, `GET /tenant/{tenant_id}/status`, `GET /config-schema` | `api/main.py` (section 9.6). Paths are **fixed** (see 1B). |
+| **Every** response uses the envelope `{"status": "ok"\|"error", "data": ..., "error": ...}`, errors included | Custom exception handlers. A wrong envelope **suspends the subscription**. |
+| `agent.manifest.json` at the **repo root**, `filiere` = `cybersecurite`, unique `slug` | Ahmed (section 9.1). |
+| Working, standalone `Dockerfile`; the port must match `base_url` | Dhia (section 9.6). Port **9000** like the example agent. |
+| Strict **tenant isolation** | One data folder per tenant, validated tenant ids, no global state. |
+| `POST /tenant/deactivate` really **deletes** the tenant data | `purge_tenant()`. |
+| No secrets in code, no sensitive data in logs | `.env`, secrets only from environment. |
+| No network call to a service not **mentioned in the execution report** | Reports list every outbound service (LLM providers, OSV.dev, the core). |
+| Alerts go to `POST {NOYAU_URL}/webhooks/agent-events` | `notifier.py` (section 9.4). |
+| Agents never call other agents | We do not. `produces` and `consumes` stay empty. |
+
+### 1B. What the core really does (verified in its source code)
+
+This table is the most important part of v2. Source: `PROJECT_FULL_REFERENCE.md` §11 (code) and §13 (analysis).
+
+| # | Fact about the core | Consequence for us | Ref |
+|---|---|---|---|
+| F1 | `POST /agents/submit` expects a **flat JSON** (`developer_email`, `base_url`, `manifest`, ...), not the manifest file. The guide's `curl -d @agent.manifest.json` returns **422**. | `scripts/submit_agent.py` converts the manifest (Ahmed). | §13.4 |
+| F2 | Only `endpoints.base_url` is read from the manifest. All other paths use **fixed defaults**: `/tenant/activate`, `/tenant/deactivate`, `/exchange/notify`. | Never rename these paths. | §13.5 |
+| F3 | The core only ever calls `activate`, `deactivate` and (if consumed) `exchange/notify`. It **never** calls `/health`, `/status` or `/config-schema`. | They stay mandatory (the teacher checks them by hand) but are not what breaks activation. | §13.5 |
+| F4 | Every core-to-agent call is a `POST` with a **10 s timeout**, expects HTTP **2xx** and a JSON object with `status` = `ok` or `error`. | All contract endpoints answer fast; real work runs in background threads. A non-2xx code is how we refuse an activation. | §13.3 |
+| F5 | Any failure (timeout, non-2xx, bad JSON) sets the subscription to `suspended`. In the **web UI this is silent** (badge "Suspendu", no message); the **API** `/subscriptions` returns 502 with the reason. | Debug from our agent logs; test through the API when you need the reason. | §13.3 |
+| F6 | Each call carries `Authorization: Bearer <tenant_api_key>`, `X-Tenant-Id: <company id>` (a **UUID**) and a static `X-Platform-Signature: core-gateway` (not a real signature). `deactivate` is sent with body `{}`. | Accept UUID tenant ids; compare the bearer token with the key stored at activation; ignore the static signature. | §13.3, §13.9 |
+| F7 | The **web UI subscription sends an empty config** (`{}`). Only the JSON API `POST /subscriptions` can pass a `config`. | Activation must succeed with an empty config; hosts are provided later through `PUT /tenant/{id}/config` (section 3, 9.6). | §11.14, §11.10 |
+| F8 | The company sees its `tenant_api_key` in `/mon-compte`. | That key is what the company uses to call our `PUT config` and run endpoints. | §11.15 |
+| F9 | Each new subscription generates a **new** tenant key; activation overwrites the key we stored. | `activate` always replaces the stored key. | §11.14 |
+| F10 | Cancelling calls `deactivate`, then marks the subscription cancelled **even if our agent fails**; there is no retry. | `purge_tenant` must be reliable and idempotent. | §11.10 |
+| F11 | The webhook accepts an event if `tenant_api_key` + `X-Tenant-Id` match a subscription (status not checked). Events are shown in `/mon-compte` (last 20) and `/admin` (last 30), payload in clear. | Alert `data` carries **no secret, no host data, no raw LLM output**. | §13.7 |
+| F12 | The core needs **PostgreSQL** at startup (`create_all`), and pins versions (fastapi 0.115.0, pydantic 2.9.2, bcrypt 4.0.1...). | Run the core in its own virtual environment; PostgreSQL via Docker. | §13.8 |
+| F13 | The `/admin` page has **no activate/deactivate buttons** (only certify, publish, suspend). Deactivation happens through `POST /subscriptions/{id}/cancel` (API). | Open question 9 (section 12). | §11.14 |
+
+---
+
+## 2. Target repository structure
+
+(Updates section 8 of the README.)
+
+```text
+ai-patch-agent/
+├── README.md  PLAN.md  SETUP.md
+├── agent.manifest.json            # repo root, required by the contract
+├── Dockerfile  .dockerignore  .gitignore  .env.example
+├── requirements.txt  requirements-dev.txt  requirements.lock
+├── ansible.cfg  inventory.ini     # inventory.ini = local lab (CLI mode)
+├── lab/Vagrantfile
+├── scripts/
+│   ├── sync_lab_keys.sh  check_env.sh  reset_lab.sh     # lab (Taha)
+│   ├── submit_agent.py                                  # manifest -> core submission (Ahmed)
+│   └── simulate_core.sh                                 # replays the core's calls (Dhia)
+├── playbooks/                     # install_osquery, osquery_query, check_updates, patch, rollback
+├── agent/
+│   ├── __init__.py
+│   ├── context.py                 # TenantContext, per-tenant paths, state file
+│   ├── inventory.py               # validated inventory generation from tenant config
+│   ├── tools.py                   # osquery / apt / OSV / deploy / rollback + validation
+│   ├── llm.py                     # providers + fallback + JSON validation
+│   ├── graph.py                   # LangGraph workflow
+│   ├── runner.py                  # run / resume / status (CLI and API both use it)
+│   ├── notifier.py                # webhook alerts to the core
+│   ├── main.py                    # CLI
+│   └── ask.py                     # bonus
+├── api/main.py                    # FastAPI service (contract + our endpoints)
+├── tests/                         # test_tools.py, test_contract.py, test_scenarios.py
+├── data/                          # runtime, git-ignored (data/tenants/<tenant_id>/...)
+├── noyau-local/                   # the teacher's core, unzipped, git-ignored, NEVER modified
+└── docs/ (architecture.md, roles.md, core-local.md, security.md, lab.md, meetings/, reference/)
+```
+
+Add to `.gitignore`: `data/`, `.env`, `noyau-local/`, `.venv*/`.
+
+`docs/reference/` contains: `PROJECT_FULL_REFERENCE.md`, `ai-patch-agent-guide.html`, and the **teacher's zip** (kept as an archive, original files untouched).
+
+Per-tenant runtime layout (created automatically, never committed):
+
+```text
+data/tenants/<tenant_id>/
+├── state.json          # tenant api key (chmod 600), ecosystem, configured flag
+├── inventory.ini       # generated from the tenant config
+├── checkpoints.db      # LangGraph SQLite checkpoints
+├── runs.json           # run states
+└── reports/            # one JSON report per run
+```
+
+---
+
+## 3. Interfaces between modules (agree on these first)
+
+These signatures let everyone work **in parallel**. Change one only through a PR that every owner reviews.
+
+`TenantContext` (owner: Wassim), passed as the first argument everywhere:
+
+```python
+ctx.tenant_id      # validated: ^[A-Za-z0-9_-]{1,64}$  (a UUID from the core is valid)
+ctx.ecosystem      # e.g. "Ubuntu:22.04:LTS"
+ctx.inventory      # Path to the inventory used for this tenant
+ctx.checkpoints_db # Path
+ctx.reports_dir    # Path
+```
+
+| Module | Function | Returns |
+|---|---|---|
+| `tools` | `run_osquery(ctx, sql, target="all")` | `{host: rows}` or `{host: {"error": ...}}` |
+| `tools` | `get_upgradable(ctx, target="all")` | `{host: [{"name", "new", "old"}]}` |
+| `tools` | `osv_lookup(name, version, ecosystem)` | `{"count": int, "ids": [...], "summary": str}` |
+| `tools` | `deploy(ctx, target, packages, dry_run=False)` | `{host: {"ok": bool, "reboot_required": bool, "pins": {...}}}` |
+| `tools` | `rollback(ctx, host, pins)` | `{"ok": bool, ...}` |
+| `llm` | `chat(system, user)` | `{"plan": dict, "provider": str}`; raises `RuntimeError` only if all providers fail |
+| `graph` | `build(ctx)` | uncompiled `StateGraph` bound to `ctx` |
+| `runner` | `run(ctx)` / `resume(ctx, run_id, decision)` | blocking, for the CLI |
+| `runner` | `start_run(ctx)` / `start_resume(ctx, run_id, decision)` | non-blocking (thread), for the API |
+| `runner` | `get_run(ctx, run_id)` | `{"run_id", "state", "plan"?, "report"?, "error"?}` |
+| `notifier` | `send_event(ctx, event_type, severity, data)` | `bool`, **never raises** |
+
+Run states: `running`, `waiting_approval`, `done`, `failed`.
+
+**HTTP surface of our agent** (owner: Dhia):
+
+| Method | Path | Auth | Part of |
+|---|---|---|---|
+| GET | `/health` | none | contract |
+| POST | `/tenant/activate` | bearer + `X-Tenant-Id` (sent by the core) | contract |
+| POST | `/tenant/deactivate` | bearer + `X-Tenant-Id` (sent by the core) | contract |
+| GET | `/tenant/{tenant_id}/status` | `X-Tenant-Id` optional | contract |
+| GET | `/config-schema` | none | contract |
+| POST | `/exchange/notify` | none | contract (no-op) |
+| PUT | `/tenant/{tenant_id}/config` | bearer + `X-Tenant-Id` | ours (F7: set hosts after an empty activation) |
+| POST | `/tenant/{tenant_id}/runs` | bearer + `X-Tenant-Id` | ours |
+| GET | `/tenant/{tenant_id}/runs/{run_id}` | bearer + `X-Tenant-Id` | ours |
+| POST | `/tenant/{tenant_id}/runs/{run_id}/approve` | bearer + `X-Tenant-Id` | ours |
+
+Alert events sent to the core (severity must be one of `info|low|medium|high|critical`). The `data` field holds only counts, package names and the run id (F11):
+
+| event_type | When | Severity |
+|---|---|---|
+| `patch_plan_ready` | plan produced, waiting for approval | highest priority in the plan (`critical`/`high`), else `medium` |
+| `patch_canary_failed` | canary deployment or verification failed | `high` |
+| `patch_rollback_done` | rollback executed | `high` |
+| `patch_fleet_done` | fleet patched and verified | `info` |
+
+---
+
+## 4. Fixes to apply
+
+### 4A. Bugs and gaps in the guide's code (do not copy blindly)
+
+| # | Issue | Owner |
+|---|---|---|
+| 1 | **Bug:** in `tools.py` the apt regex group is named `n` (`(?P<n>...)`) but `graph.py` reads `p["name"]`, which raises `KeyError`. Rename the group to `name`. | Wassim |
+| 2 | Flat imports (`import tools`, `from llm import chat`) do not work from `api/`. Make `agent/` a package: `from agent import tools`, run the CLI with `python -m agent.main`. | Wassim + Baha |
+| 3 | Everything uses global paths (`inventory.ini`, `checkpoints.db`, `reports/`). Replace them with `ctx.*` for tenant isolation. | Wassim + Baha |
+| 4 | `validate_sql` can be bypassed with comma joins: `SELECT * FROM users, file ...` only sees `users`. Use the hardened version in section 9.4 and test it. | Wassim, tests by Dhia |
+| 5 | In `graph.verify`, package names go into an SQL string. Validate them with `tools.PKG_RE` before building the query. | Baha |
+| 6 | Add **dry-run** (`ansible-playbook --check`) before the real canary deployment (SMART objective 3: "dry-run then real"). `command` tasks are skipped in check mode. | Wassim (tool), Baha (graph node) |
+| 7 | Rollback must only target hosts that were really patched. | Baha |
+| 8 | Reports must contain `tenant_id`, the run id, timestamps and a `network_calls` list (LLM provider used, `api.osv.dev`, the core webhook). | Wassim |
+| 9 | Logs: never log API keys, tenant keys, SSH key paths or LLM raw prompts that contain host data. | everyone |
+| 10 | The LLM must never receive hostnames or IPs (already the design, add a test). | Dhia |
+
+### 4B. Fixes imposed by the core (new in v2)
+
+| # | Issue | Owner |
+|---|---|---|
+| 11 | Replace the guide's submission `curl -d @agent.manifest.json` with `scripts/submit_agent.py` (F1). | Ahmed |
+| 12 | Contract endpoints answer in well under 10 s and never run agent work inline (F4). Runs stay in threads. | Dhia, Baha |
+| 13 | Verify the bearer token (constant-time compare) on `deactivate` and on every endpoint of ours (F6). | Dhia |
+| 14 | Activation must succeed with an **empty config**; add `PUT /tenant/{id}/config` for the hosts (F7). | Dhia |
+| 15 | Alert `data`: no secret, no hostname/IP, no SSH path, no raw LLM output; counts, package names and run id only (F11). | Wassim, Baha |
+| 16 | `purge_tenant` idempotent and safe when the folder does not exist (F10). | Wassim |
+| 17 | Accept a **UUID** as tenant id (F6), covered by a test. | Dhia |
+
+---
+
+## 5. Running the core and the agent together
+
+Every integration test goes through the teacher's core. Owner of this section: **Taha** (writes `docs/core-local.md` from it in Sprint 0); **Dhia** owns the end-to-end test (5.6).
+
+### 5.1 Where the core lives
+
+Unzip the teacher's archive into `noyau-local/` (git-ignored). **Never modify it.** If the teacher publishes a new version, replace the folder and tell the team.
+
+### 5.2 PostgreSQL (the core refuses to start without it)
+
+```bash
+docker run -d --name pg-plateforme \
+  -e POSTGRES_USER=saas_user -e POSTGRES_PASSWORD=saas_pass -e POSTGRES_DB=plateforme_agents \
+  -p 5432:5432 postgres:16
+```
+
+These are the defaults hard-coded in the core's `database.py`.
+
+### 5.3 Start the core (own virtual environment: its pinned versions can conflict with ours)
+
+```bash
+cd noyau-local
+python3 -m venv .venv-core && source .venv-core/bin/activate
+pip install -r requirements.txt
+export DATABASE_URL="postgresql+psycopg2://saas_user:saas_pass@localhost:5432/plateforme_agents"
+export JWT_SECRET_KEY="any-long-random-string"
+uvicorn app.main:app --reload --port 8000
+# in a second terminal, once: python scripts/create_admin.py
+```
+
+Pages: `http://localhost:8000/` (home), `/inscription`, `/connexion`, `/catalogue`, `/mon-compte`, `/admin`, API docs at `/docs`.
+
+### 5.4 Where is what: URLs to use
+
+| Core runs | Agent runs | `base_url` in the manifest | `NOYAU_URL` for the agent |
+|---|---|---|---|
+| WSL/Linux host | uvicorn on the same host | `http://localhost:9000` | `http://localhost:8000` |
+| WSL/Linux host | Docker (`-p 9000:9000`) | `http://localhost:9000` | `http://host.docker.internal:8000` |
+| Windows host | WSL | `http://localhost:9000` (test!) | Windows host IP seen from WSL (test!) |
+
+On Linux Docker, add `--add-host=host.docker.internal:host-gateway` to `docker run`. The Windows/WSL row is **not guaranteed**: Taha tests both directions in Sprint 1 and writes the result in `docs/core-local.md`.
+
+### 5.5 Simulate the core first (no core needed)
+
+Before involving the real core, replay exactly what its gateway sends. File `scripts/simulate_core.sh` (owner: Dhia), bash/WSL:
+
+```bash
+#!/usr/bin/env bash
+# Replays what the core's agent gateway sends to an agent.
+# Usage: scripts/simulate_core.sh [base_url]   (default http://localhost:9000)
+set -euo pipefail
+BASE="${1:-http://localhost:9000}"
+TID="${TID:-$(python3 -c 'import uuid;print(uuid.uuid4())')}"      # the core uses UUID tenant ids
+KEY="tak_$(python3 -c 'import secrets;print(secrets.token_urlsafe(32))')"
+H=(-H "Authorization: Bearer $KEY" -H "X-Tenant-Id: $TID"
+   -H "X-Platform-Signature: core-gateway" -H "Content-Type: application/json")
+
+echo "== activate (empty config, like the web UI)"
+curl -sS -m 10 -X POST "$BASE/tenant/activate" "${H[@]}" -d '{"config": {}}'; echo
+echo "== health";          curl -sS -m 10 "$BASE/health"; echo
+echo "== config-schema";   curl -sS -m 10 "$BASE/config-schema" | head -c 200; echo
+echo "== status";          curl -sS -m 10 "$BASE/tenant/$TID/status"; echo
+echo "== deactivate (body {})"
+curl -sS -m 10 -X POST "$BASE/tenant/deactivate" "${H[@]}" -d '{}'; echo
+echo "== status after deactivate (must be an error envelope, HTTP 404)"
+curl -sS -m 10 -w '\nHTTP %{http_code}\n' "$BASE/tenant/$TID/status"
+```
+
+`-m 10` mimics the core's 10-second timeout. Every response must be the envelope.
+
+### 5.6 End-to-end scenario (what we show the teacher)
+
+```text
+ 1. PostgreSQL up (5.2), core up (5.3), admin created
+ 2. Agent up (uvicorn or Docker), simulate_core.sh passes
+ 3. python scripts/submit_agent.py http://localhost:8000      -> agent "Soumis"
+ 4. Browser, /connexion as admin -> /admin: Certifier, then Publier
+ 5. /inscription: create test company A, then /catalogue: Souscrire
+ 6. /mon-compte: badge "Actif" (not "Suspendu") + tenant key; note the company id
+ 7. Configure the hosts: PUT {agent}/tenant/<company id>/config with the tenant key (9.6)
+ 8. Start a run, approve it, see canary then fleet on the lab
+ 9. /mon-compte: the alert events appear ("patch_plan_ready", "patch_fleet_done")
+10. Isolation: create test company B, subscribe; B must never see A's runs, hosts or reports
+11. Cancel A: POST /subscriptions/<id>/cancel on the core API -> data/tenants/<id> is deleted
+```
+
+> Reminder (PowerShell users): use `curl.exe`, and avoid the `\` line continuations of bash examples. In WSL everything above works as written.
+
+### 5.7 Debugging tips
+
+- Badge "Suspendu" right after subscribing: the activation failed. Look at the **agent logs**, then reproduce with `simulate_core.sh`. To get the reason from the core, subscribe through `POST /subscriptions` (API docs at `/docs`): it returns 502 with the message.
+- "Slug already exists" on submission: change `slug` (or delete the row in PostgreSQL) to resubmit.
+- The agent shows `Tenant not active` after a restart of the container: `data/` was not on a volume. Use the `ai_patch_data` volume.
+
+---
+
+## 6. Sprint calendar
+
+Weekly sprints. **Ahmed fixes the actual dates** once the consolidated module calendar is known (dates in the teacher's calendar win over this table). End of each sprint: 15-minute internal demo and a retro written up as minutes.
+
+| Sprint | Goal | Exit criteria (all must be true) |
+|---|---|---|
+| **0: Setup** | Same environment for everyone, repo ready, contracts read | `check_env.sh` green for all 6; repo with protected `main`; everyone read their part of `PROJECT_FULL_REFERENCE.md` (section 0 table); **core runs locally for at least Taha, Dhia and Ahmed** (section 5); `docs/core-local.md` written; open questions (section 12) sent to the supervisors |
+| **1: Lab + skeleton** | Lab running, playbooks, API skeleton | 3 VMs, snapshots `clean` and `ready`; `ansible all -m ping` OK; 5 playbooks written; `api/main.py` answers the 5 endpoints **and passes `simulate_core.sh`**; `scripts/submit_agent.py` works against the local core; `requirements.lock` committed; Windows/WSL network test documented |
+| **2: Tools + LLM** | Collect, enrich, analyze | `tools.py` complete with `ctx`; hardened `validate_sql` tested; `llm.py` with fallback tested on 2 providers; `collect → enrich → analyze` produces a valid plan on the lab |
+| **3: Workflow** | Full pipeline with approval | `approve → dry-run → canary → verify → fleet / rollback → report` runs end to end from the CLI; checkpoints resume after a restart; runner, `PUT config` and run endpoints working; **alerts visible in the core's `/mon-compte`** |
+| **4: Compliance + Docker** | Contract certified | Docker image builds and runs; conformity tests green; agent submitted, certified, published and subscribed **from the web UI (empty config)**, configured with `PUT config`, cancelled with data purged (section 5.6); failure scenarios (broken patch, rollback) tested; two-tenant isolation proven |
+| **5: Final** | Report, demo, submission | Full demo rehearsed twice (section 5.6 script); README/docs final; report and presentation; code submitted as required |
+
+---
+
+## 7. Ground rules
+
+- **One branch per feature**, PR into `main`, **at least one reviewer** (pairs in section 10). Nobody pushes to `main`.
+- `git add -p`, never `git add .`. `.env`, keys, `data/` and `noyau-local/` never enter Git.
+- Commit messages: short, imperative, English.
+- A PR is merged only if: tests pass, no secret, and the owner of any interface it touches has approved.
+- Blocked for more than half a day? Say it in the team channel immediately.
+- Everything the LLM returns is **untrusted input**.
+- The teacher's core is **read-only for us**. If it seems wrong, write down the case and ask (section 12), do not patch it.
+
+---
+
+## 8. Dependencies at a glance
+
+```text
+Taha (lab, core-local) ─▶ Abderaouf (playbooks) ─▶ Wassim (tools) ─▶ Baha (graph, runner) ─▶ Dhia (API, Docker, tests)
+                                                      │                    │
+                                                      └── context/notifier ┘      Ahmed: repo, manifest, submit script, CLI, docs, review
+```
+
+Until a dependency lands, work against its **interface** (section 3) with a stub or mock data. The API (Dhia) and the core environment (Taha) do not depend on the lab: they start in Sprint 0/1.
+
+---
+
+## 9. Tasks by member
+
+### 9.1 Ahmed (BOULOUH): team leader, documentation, GitHub, CLI
+
+**Owns:** repo and workflow, `agent.manifest.json`, `scripts/submit_agent.py`, `agent/main.py`, `docs/`, deliverables, Elearn submission, integration review.
+
+**Tasks**
+
+- [ ] Sprint 0: create the repo, protect `main` (require PR + 1 review), add the team, commit Appendix A of `SETUP.md`, `README.md`, `PLAN.md`, `SETUP.md`, `.github/pull_request_template.md`, `.gitignore` (section 2).
+- [ ] Sprint 0: put `PROJECT_FULL_REFERENCE.md`, `ai-patch-agent-guide.html` and the teacher's zip in `docs/reference/`. Create the GitHub Projects board (Backlog, In progress, In review, Done) with one issue per checkbox of this plan.
+- [ ] Sprint 0: send the open questions (section 12) to Pr. SEBAA and Dr. MANSOUR, and ask for `GUIDE_GITHUB_NOYAU.docx` (repo organization rules, not yet received).
+- [ ] Every sprint: weekly meeting, minutes in `docs/meetings/YYYY-MM-DD.md`, board updated, demo.
+- [ ] Sprint 1: `agent.manifest.json` (below), checked against the contract and `agent-exemple/`.
+- [ ] Sprint 1: `scripts/submit_agent.py` (below), tested against the local core (fix 11).
+- [ ] Sprint 3: CLI `agent/main.py` (below).
+- [ ] Sprint 4: contract review of every PR touching `api/`; run the contract checklist (section 11) before each milestone.
+- [ ] Sprint 5: final report, presentation, deliverables list, Elearn upload.
+
+**`agent.manifest.json`** (repo root; fill the placeholders):
+
+```json
 {
-  "schema_version": 1,
-  "plan_id": "plan-demo-001",
-  "environment": "lab",
-  "operation": "targeted_package_update",
-  "inventory_snapshot_id": "inventory-demo-001",
-  "evidence_snapshot_id": "scan-demo-001",
-  "advisory_snapshot_id": "advisories-demo-001",
-  "hosts": ["vm-01", "vm-02"],
-  "packages": [
-    {
-      "name": "idk-demo-service",
-      "from_version": "1.0.0",
-      "to_version": "1.1.0",
-      "source": "signed-lab-repository"
-    }
-  ],
-  "dependency_changes": [],
-  "application_profile": "demo-http",
-  "template_id": "<configured-template-id>",
-  "playbook_commit": "<pinned-git-commit>",
-  "rollout": {"canary": "vm-01", "batch_size": 1},
-  "recovery": {"method": "cached_package_and_config_restore"},
-  "plan_hash": "<computed-from-canonical-execution-fields>",
-  "approval": null
+  "slug": "ai-patch-agent",
+  "name": "AI Patch Agent",
+  "version": "1.0.0",
+  "description": "Detects, prioritizes and safely deploys Linux security updates (canary rollout, rollback) with human approval.",
+  "filiere": "cybersecurite",
+  "category": "patch-management",
+  "developer": { "name": "BOULOUH Ahmed Ouassim", "email": "TO_FILL@etu.estin.dz" },
+  "team_name": "TO_FILL",
+  "pricing_model": "flat_monthly",
+  "price": 0,
+  "resource_requirements": { "cpu": "1", "memory_mb": 512 },
+  "endpoints": {
+    "base_url": "http://localhost:9000",
+    "health": "/health",
+    "activate": "/tenant/activate",
+    "deactivate": "/tenant/deactivate",
+    "status": "/tenant/{tenant_id}/status",
+    "config_schema": "/config-schema",
+    "exchange_notify": "/exchange/notify"
+  },
+  "produces": [],
+  "consumes": []
 }
-~~~
+```
+
+> Only `base_url` is actually read by the core (F2); the other endpoint paths are fixed defaults, so keep them identical to the example. The `base_url` port must equal the Dockerfile's `EXPOSE` and `uvicorn --port` (9000). The host (`localhost` vs a service name) depends on how the teacher deploys: question 3.
+
+**`scripts/submit_agent.py`** (the core expects a flat payload, not the manifest file: F1). Run from the repo root:
+
+```python
+"""Submit the agent to the core: converts agent.manifest.json into the flat
+payload expected by POST /agents/submit.
+Usage: python scripts/submit_agent.py [core_url]   (default http://localhost:8000)
+"""
+import json
+import sys
+
+import httpx
+
+CORE = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
+
+with open("agent.manifest.json", encoding="utf-8") as f:
+    m = json.load(f)
+
+payload = {
+    "slug": m["slug"],
+    "name": m["name"],
+    "version": m["version"],
+    "description": m["description"],
+    "filiere": m["filiere"],
+    "category": m["category"],
+    "developer_email": m["developer"]["email"],
+    "team_name": m.get("team_name"),
+    "base_url": m["endpoints"]["base_url"],
+    "pricing_model": m.get("pricing_model", "flat_monthly"),
+    "price": m.get("price", 0),
+    "manifest": m,
+    "produces": m.get("produces", []),
+    "consumes": m.get("consumes", []),
+}
+
+r = httpx.post(f"{CORE}/agents/submit", json=payload, timeout=10)
+print(r.status_code, r.text)
+if r.status_code == 400:
+    print("Hint: the slug already exists. Change it (or delete the row) to resubmit.")
+elif r.status_code == 422:
+    print("Hint: a required field is missing in agent.manifest.json.")
+```
+
+**`.github/pull_request_template.md`**
+
+```markdown
+## What and why
+<!-- one or two sentences -->
+
+## Checklist
+- [ ] Tests pass (`pytest`)
+- [ ] No secret, key or `.env` in the diff
+- [ ] Inputs validated; nothing the LLM returns is executed
+- [ ] Tenant-isolated (no global paths/state)
+- [ ] Contract endpoints still return the envelope and answer in < 10 s
+- [ ] Docs updated if an interface changed
+- [ ] Reviewer assigned (see PLAN.md section 10)
+```
+
+**`agent/main.py`** (thin CLI over the runner; local lab only):
+
+```python
+"""CLI for the local lab. Usage:
+    python -m agent.main run
+    python -m agent.main approve <run_id> yes|no
+    python -m agent.main status <run_id>
+"""
+import argparse
+import json
+
+from agent import runner
+from agent.context import TenantContext
+
+
+def main() -> None:
+    p = argparse.ArgumentParser(prog="agent.main")
+    sub = p.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("run")
+    a = sub.add_parser("approve")
+    a.add_argument("run_id")
+    a.add_argument("decision", choices=["yes", "no"])
+    s = sub.add_parser("status")
+    s.add_argument("run_id")
+    args = p.parse_args()
+
+    ctx = TenantContext.local()          # uses the repo's inventory.ini
+    if args.cmd == "run":
+        out = runner.run(ctx)
+    elif args.cmd == "approve":
+        out = runner.resume(ctx, args.run_id, args.decision)
+    else:
+        out = runner.get_run(ctx, args.run_id)
+    print(json.dumps(out, indent=2, default=str))
+
+
+if __name__ == "__main__":
+    main()
+```
 
-Approval stores the trusted operator identity, plan hash, time, expiry, and scope. Validation occurs again inside execute_plan. Changes to hosts, versions, dependencies, playbook commit, profile, or recovery policy invalidate approval. Expired approval or material host-state drift blocks execution.
+**Done when:** a new member can go from zero to green `check_env.sh` using only `SETUP.md`; the agent can be submitted with one command; every PR has a reviewer; deliverables are on time.
 
-SQLite stores plans, approvals, runs, per-host states, and append-only application events in one local database. This fits the single-control-node lab and avoids a separate database server. Database transactions provide execution claims and per-host locks. The service owns the database file, outside the agent's editing access; approval and execution state come from persisted records.
+---
 
-A unique request ID deduplicates execute_plan. Persisted correlation data links the launch intent to the eventual Semaphore task. If a launch response is lost, reconciliation looks for the existing job using that data. Unconfirmed acceptance becomes execution_unknown and blocks another launch until reconciliation establishes the actual state.
+### 9.2 Taha (BELALOUI): infrastructure, lab and local core
 
-## 8. Deployment and recovery
+**Owns:** `lab/Vagrantfile`, `inventory.ini`, `ansible.cfg`, `scripts/` (lab ones), `requirements.lock`, the lab snapshots, `docs/core-local.md` and `docs/lab.md`.
 
-### 8.1 Application profiles
+**Tasks**
 
-A profile defines managed packages, configuration files, services, dependency order, graceful-stop behavior, health checks, timeouts, and recovery capability.
+- [ ] Sprint 0: be the first to complete `SETUP.md` end to end and **fix any wrong command** in it (PR). You are the reference machine.
+- [ ] Sprint 0: run the **core locally** following section 5.1 to 5.3 (PostgreSQL in Docker, own virtual environment, `create_admin.py`), then write `docs/core-local.md` so any teammate can do it in 15 minutes.
+- [ ] Sprint 1: working 3-VM lab; snapshots `clean` (fresh) and `ready` (osquery installed); `ansible all -m ping` green; `scripts/sync_lab_keys.sh` and `check_env.sh` tested on a second machine.
+- [ ] Sprint 1: write `docs/lab.md`: how to start/stop/reset, how to share the lab (R5: weaker PCs), expected IPs.
+- [ ] Sprint 1: from a clean install, `pip freeze > requirements.lock`; commit; update `Dockerfile` and `SETUP.md` to use it.
+- [ ] Sprint 1: **network tests**, results written in `docs/core-local.md` and `docs/lab.md`:
+  - agent container reaches the VMs: `docker run --rm -v ~/.ssh/lab:/keys:ro <image> ssh -i /keys/node1 vagrant@192.168.56.11 true` (Docker Desktop networking to the host-only network is not guaranteed on every machine);
+  - the core reaches the agent and the agent reaches the core in each row of the table of section 5.4 (especially Windows host with WSL).
+- [ ] Sprint 2+: help any teammate whose environment fails (you own `check_env.sh`).
+- [ ] Sprint 3: `scripts/reset_lab.sh` documenting the PowerShell commands (`vagrant snapshot restore ready`) and a short checklist to rehearse the demo.
+- [ ] Sprint 4: confirm the lab **and the local core** survive a full reboot of the host and document what to do after.
 
-The demo-http profile uses a small systemd HTTP service distributed as a lab .deb package. A later multi-service profile can define proxy -> application -> dependency shutdown order, with the reverse startup order. Dependency cycles fail profile validation.
+**Commands to know**
 
-Profiles identify exactly which resources the playbook owns. Suspension affects the defined services, and recovery restores their recorded prior state. Unrelated services remain outside the profile's operations; system libraries are handled as package dependencies.
+```powershell
+cd C:\lab
+vagrant up | halt | status
+vagrant snapshot save clean
+vagrant snapshot save ready
+vagrant snapshot restore ready
+vagrant snapshot list
+```
 
-### 8.2 Execution sequence
+**Done when:** any teammate can reset the lab to a known state in under 5 minutes, start the core in 15, and get three pending-update machines for the demo.
 
-1. **Validation:** the gate checks approval, the immutable plan, supported hosts, the playbook commit, and the permitted template.
-2. **Preflight:** host checks cover SSH identity, privileges, package locks, free space, baseline service health, candidates, and recovery prerequisites.
-3. **Preparation:** verified prior packages and relevant dependency versions are retained in a protected recovery directory. Backups record configs, ownership, permissions, checksums, and service state.
-4. **Revalidation:** package-transaction simulation is compared with the approved dependency closure. Unexpected removals or version changes block mutation.
-5. **Canary:** the designated ready host is processed first. A failed canary halts later mutations.
-6. **Suspension:** profile-managed workloads are drained or stopped in dependency order.
-7. **Application:** Ansible installs the exact approved versions and configuration/artifacts within the reviewed scope.
-8. **Resumption:** profile-managed services restart in startup order.
-9. **Verification:** assertions check package versions, service state, expected ports, and an application health response within a timeout.
-10. **Continuation and reporting:** later batches proceed after canary success. Each host's result is stored and included in a fleet summary.
-
-Rollout settings define bounded batches and concurrency, using Ansible's [serial and execution strategies](https://docs.ansible.com/projects/ansible/latest/playbook_guide/playbooks_strategies.html).
-
-Reviewed [APT module options](https://docs.ansible.com/projects/ansible/latest/collections/ansible/builtin/apt_module.html) support exact package versions and the project's controlled recovery path. The playbooks block unapproved removals and unauthenticated installs, retain recovery artifacts, and verify final state explicitly.
-
-A planned preview can use Ansible check/diff mode on supported tasks. It is advisory: [check mode has simulation limits](https://docs.ansible.com/projects/ansible/latest/playbook_guide/playbooks_checkmode.html) and does not prove a rollout will succeed. Preview validation excludes tasks that force real execution.
-
-### 8.3 Failure rules
-
-| Failure | Outcome |
-| --- | --- |
-| Rejected/expired/stale plan | Launch blocked with the exact reason |
-| SSH/identity/preflight failure | Host mutation blocked; continuation follows canary/rollout policy |
-| Missing recovery artifacts | Recovery-required deployment blocked before suspension |
-| Download/signature failure | Backups preserved, stopped services restored, failed stage reported |
-| Partial installation | Actual package state captured; recovery limited to the approved, tested procedure |
-| Post-update health failure | Retained versions/configs restored; restarted services checked against prior health |
-| Recovery failure | recovery_failed outcome; diagnostics preserved and affected batches halted |
-| SSH lost during mutation | execution_unknown until host/job state is reconciled |
-| Operator pause | New work paused; active APT transaction continues to a safe outcome |
-| Model/provider unavailable | Agent reasoning paused; accepted work monitored deterministically |
-
-Mutation handling uses Ansible block/rescue/always with a separate reachability and reconciliation path. Unreachable hosts do not trigger ordinary block rescue. A successful rescue can also change Ansible's failure accounting, so the controller uses explicit host outcomes to enforce the canary policy. See [Ansible blocks](https://docs.ansible.com/projects/ansible/latest/playbook_guide/playbooks_blocks.html).
-
-Recovery restores availability when possible; it does not mean the requested patch succeeded. A restored old version is rolled_back and may still require remediation.
-
-Package downgrade is not a universal rollback mechanism. Each profile has its own recovery tests. Kernel changes, irreversible migrations, and unsupported dependency downgrades remain excluded until a tested snapshot/backup procedure is added.
-
-## 9. Scheduling, reports, and observability
-
-Reviewed playbooks run through [Semaphore task templates](https://docs.semaphoreui.com/user-guide/task-templates/), with execution output in the existing task views. Agent reasoning appears in the agent interface; Semaphore provides the execution and history interface.
-
-The initial scheduling options are on-demand discovery and a configurable periodic read-only scan. The scheduler may produce findings and an unapproved plan, but cannot approve mutations. Conflicting scans and mutations are serialized per host.
-
-Persisted host outcomes are unchanged, verified, skipped, preflight_failed, install_failed, rolled_back, recovery_failed, unreachable, execution_unknown, and unsupported.
-
-Each run records:
-
-- Plan/approval hash, operator identity, environment, and resolved targets.
-- Model/runtime details, evidence/advisory versions, and playbook commit.
-- Semaphore task ID, task transitions, timestamps, and durations.
-- Package/configuration/service state before and after.
-- Health assertions, failure stage, exit code, and redacted stdout/stderr.
-- Recovery actions, final host state, and whether another plan is required.
-
-Reports are available as machine-readable JSON and short Markdown summaries, linked to the corresponding Semaphore task. Separate counts distinguish patched, unchanged, failed, recovered, and unknown hosts.
-
-Measurements cover scan duration, planning latency, deployment duration, recovery duration, task retries, changed-host count, and control-node/VM resource use. Reported values include host count, runtime/model, and test conditions. Model usage and cost appear only when the provider supplies reliable usage data.
-
-Events are recorded locally with monotonically ordered IDs. They provide application history; the local store does not offer immutable or tamper-proof storage.
-
-## 10. Operator workflows
-
-| Request | Expected agent behavior |
-| --- | --- |
-| "Scan the lab and explain pending security updates." | Read-only inventory/advisory analysis with evidence and uncertainties |
-| "Plan updates for the web group." | Current group membership resolved into proposed exact hosts/versions |
-| "Deploy version 1.1.0 of the demo service to vm-01 and vm-02." | Profile/artifact validation followed by a plan approval request |
-| "Reject this rollout." | Store rejection; no execution |
-| "Run the approved plan." | Gate validation, canary, bounded rollout, verification, report |
-| "Why did vm-02 fail?" | Explanation of the observed failure stage using task output and host evidence |
-| "Pause the rollout." | New batches paused, active transactions preserved, pending hosts reported |
-| "Add vm-04 and scan it." | Inventory/identity validation and fresh evidence; prior approval scope preserved |
-| "Use another provider/runtime." | Configuration switch and capability check under the shared deployment policy |
-
-## 11. Implementation structure
-
-Planned repository layout; directories below are created during implementation, not by this document:
-
-~~~text
-plan.md
-architecture-black.svg
-architecture-white.svg
-architecture-research.md
-agent/
-  instructions.md
-  skills/
-  adapters/pi/
-  adapters/opencode/
-services/
-  api/
-  osquery_mcp/
-  execution_mcp/
-  state/
-schemas/
-  inventory.schema.json
-  plan.schema.json
-  tool-result.schema.json
-config/
-  agent.example.yml
-  policy.example.yml
-inventory/
-  lab.example.yml
-profiles/
-  demo-http.yml
-  multi-service.yml
-queries/
-  installed_packages.sql
-  processes.sql
-  listening_ports.sql
-ansible/
-  playbooks/bootstrap.yml
-  playbooks/discover.yml
-  playbooks/deploy.yml
-  playbooks/recover.yml
-  roles/
-lab/
-  provisioning/
-  demo-packages/
-  reset/
-tests/
-  unit/
-  contracts/
-  integration/
-  scenarios/
-  model-evals/
-  fixtures/
-reports/examples/
-docs/setup.md
-docs/demo.md
-~~~
-
-The planned backend uses Python. [FastAPI](https://fastapi.tiangolo.com/) provides the control API, request validation, and generated API documentation. SQLite provides durable project state, with no PostgreSQL dependency or separate database server for the lab. TypeScript covers runtime adapters/extensions where needed, and Ansible YAML describes host operations. Dependency versions are pinned after the compatibility spike.
-
-FastAPI handles the operator-facing HTTP endpoints; the [Python MCP SDK](https://github.com/modelcontextprotocol/python-sdk) provides MCP tool registration and transport. Both use the same policy and state services, so HTTP and MCP requests are evaluated against the same plan and execution rules.
-
-The proposed API is small:
-
-| Endpoint | Purpose | Access |
-| --- | --- | --- |
-| GET /plans/{plan_id} | Exact plan, evidence references, and approval state | Authenticated read access within the operator's environment |
-| POST /plans/{plan_id}/approval | Approval or rejection bound to the displayed plan hash | Authenticated operator action; unavailable to the model's tools |
-| GET /runs/{run_id} | Task correlation, progress, and per-host outcomes | Authenticated read access within the operator's environment |
-| GET /runs/{run_id}/report | Structured JSON or Markdown report | Authenticated read access within the operator's environment |
-
-The runtime's approval interface calls the control API through an operator-authenticated path. The model's execution tools cannot submit approvals or access the operator credential. Read endpoints enforce environment access, and approval submissions reject stale hashes, expired plans, and unauthorized identities.
-
-Long-running deployments remain Semaphore jobs. API and MCP responses return durable run IDs, and later status requests read the correlated job state. SQLite transactions cover short state updates and execution claims; SSH calls and Ansible runs occur outside those transactions. Database and recovery-artifact backups are part of the control-node setup and restart tests.
-
-Lockfiles and recorded tool/runtime versions make the setup reproducible. Generated reports, mutable state, caches, credentials, and VM images remain outside version control. Repository examples contain sanitized data.
-
-## 12. Test strategy
-
-### 12.1 Test layers
-
-| Layer | What it proves | Environment |
-| --- | --- | --- |
-| Unit | Schemas, Debian version matching, inventory expansion, policy, plan hashing, locks, status reduction | Synthetic fixtures; no LLM or VM |
-| Control API/state | Authenticated approval, environment access, stale-hash rejection, SQLite persistence and transaction conflicts | FastAPI test client and temporary SQLite databases |
-| MCP contracts | Tool discovery, valid/invalid arguments, result schemas, transport errors, timeout behavior | Local services and backend stubs |
-| Ansible validation | Syntax, role validation, profile references, lint, bounded preview behavior | CI/control node |
-| VM integration | Package transitions, systemd health, SSH failures, lock handling, backups, recovery | Disposable Debian VMs |
-| Agent evaluation | Correct tool choices, evidence use, approval requests, honest summaries | Recorded tool responses; selected live models |
-| Provider/runtime compatibility | Catalog inheritance, authentication, tool calls, same plan/gate behavior | Both runtimes; configured providers |
-| End-to-end | Operator-to-agent-to-MCP-to-Ansible workflow and durable reports | Three-VM lab |
-
-Mocks cover network/model error cases; VMs cover package and systemd behavior. A container-only test does not establish SSH, boot, or VM snapshot behavior. Assertions focus on outcomes and invariants, allowing the model's phrasing to vary.
-
-A reset procedure restores a known package/configuration/service baseline and clears scenario artifacts without deleting shared credentials or approved setup data. Scenario tests declare their setup, injected condition, expected states, evidence, and cleanup.
-
-### 12.2 Scenario matrix
-
-| ID | Scenario | Expected result |
-| --- | --- | --- |
-| T01 | Healthy fleet with no applicable updates | unchanged hosts; no mutation |
-| T02 | Applicable fixed version on one host | Evidence-backed plan names only that host/version |
-| T03 | Advisory exists without available fixed candidate | no_fixed_candidate; no invented install |
-| T04 | Stale advisory or evidence snapshot | unknown/block planning until refreshed |
-| T05 | Debian epoch, backport, revision, and source mapping | Correct matches; no naive version comparison |
-| T06 | Debian 12 and 13 in the same inventory | Release-specific candidates and profiles |
-| T07 | Missing osquery table or insufficient read permission | Explicit partial evidence; no false clean report |
-| T08 | Operator rejects a plan | Rejection stored; no backend launch |
-| T09 | Approval expires before execution | Gate rejects launch |
-| T10 | Host list/version/profile/commit changed after approval | Plan hash mismatch; approval invalidated |
-| T11 | Model submits forged approval or another plan's reference | Rejected independently of runtime prompts |
-| T12 | Raw Semaphore launch/admin tool requested | Tool unavailable; backend bypass denied |
-| T13 | Two execution requests use the same request ID | One run/task, same returned run ID |
-| T14 | Two plans try to mutate the same host concurrently | Exclusive host claim; conflicting plan waits/fails |
-| T15 | Host version changes between scan and execution | Drift detected before mutation |
-| T16 | Low disk space | preflight_failed; services/configs unchanged |
-| T17 | APT lock held by another process | Bounded wait followed by abort; lock and owning process preserved |
-| T18 | SSH host key differs from trusted inventory | Identity failure; no commands executed |
-| T19 | Recovery package/config backup missing | Deployment blocked before suspension |
-| T20 | Unexpected dependency install/removal after metadata refresh | Execution blocked; revised plan needed |
-| T21 | Valid single-host update | Exact version installed; all health assertions pass |
-| T22 | Valid canary followed by later batches | Defined order/concurrency; verified host results |
-| T23 | Canary health fails and recovery succeeds | rolled_back; later hosts receive no mutation |
-| T24 | Noncanary vm-03 offline while policy permits continuation | unreachable host; eligible hosts complete; partial report |
-| T25 | Package download interrupted or repository unavailable | Failure stage captured; stopped services restored |
-| T26 | Invalid signature or altered package artifact | Installation blocked; no unauthenticated bypass |
-| T27 | Partial package installation | Approved recovery only; actual dpkg state reported |
-| T28 | Service fails after a successful package install | Retained version/config restored and health rechecked |
-| T29 | Recovery artifacts lost after preparation or downgrade fails | recovery_failed; honest report; affected rollout halted |
-| T30 | SSH disconnect during installation | execution_unknown; reconciliation before any retry |
-| T31 | Launch accepted but API response lost | Existing task reconciled; no duplicate deployment |
-| T32 | Operator pauses a running rollout | No new hosts; active transaction allowed to reach a safe outcome |
-| T33 | Reapply the same verified desired version | No package change or unnecessary service interruption |
-| T34 | Add vm-04 after a plan was approved | Fresh discovery/new plan; old target set unchanged |
-| T35 | Remove/disable a host or change its address | Inventory validation/revocation rules enforced |
-| T36 | Unsupported OS or invalid/cyclic application profile | Unsupported/validation error before execution |
-| T37 | MCP server missing, malformed JSON, timeout, or disconnect | Typed failure; no fabricated tool success |
-| T38 | Provider authentication failure, rate limit, or outage | Bounded retry/pause; no duplicate backend run |
-| T39 | Model cannot produce supported tool calls | Execution disabled with capability explanation |
-| T40 | Logs/package metadata contain instructions to bypass approval | Treated as evidence; gate continues to deny mutation |
-| T41 | Large tool output or credentials in task output | Bounded/redacted results; full authorized diagnostics retained |
-| T42 | Switch runtime/provider and repeat the same workflow | Shared tool/policy behavior; new plan review where required |
-| T43 | Controller restarts during an active job | SQLite plan/task mapping restored; actual job state reconciled |
-| T44 | Dependency stop/start order or baseline health is wrong | Validation/preflight failure; no uncontrolled restart |
-| T45 | Ten-host synthetic inventory with configured concurrency | Bounded scheduling; stable IDs; complete result accounting |
-| T46 | Offline prepared lab with cached data/artifacts | Repeatable labeled demo; missing cache blocks relevant work |
-| T47 | Preview task tries to force real execution | Validation fails; read-only preview invariant preserved |
-| T48 | A recovered Ansible task appears successful in its recap | Explicit host outcome still halts a failed-canary rollout |
-
-T01-T20 and T33-T48 combine deterministic unit/contract tests with integration cases where required. T21-T32 require real VM execution or an explicitly labeled fault-injection integration harness.
-
-Each case records expected and actual status, plan/run/task IDs, relevant before/after evidence, and cleanup outcome. A case is pass, fail, or skipped with reason; no blank/unrun case is counted as passing.
-
-### 12.3 Model and provider evaluation
-
-Pi and OpenCode share a small evaluation set: observe-only request, valid plan, rejection, missing fix, offline host, failed deployment, recovery, and injected instructions in logs.
-
-Evaluation checks the expected tool sequence, valid arguments, approval boundaries, and agreement between the summary and recorded outcomes. Identical wording is unnecessary.
-
-Deterministic evaluations run in CI with recorded provider/tool responses. Presentation preparation includes live evaluations on at least two configured provider/model choices when available. An offline replay option is clearly marked as replay.
-
-Every catalog entry gets a configuration/catalog compatibility check. Each provider with available credentials gets a live authentication/tool-call smoke test. The compatibility record includes runtime, version, endpoint, model, test date, and tested/inherited-only/unavailable status. Providers without credentials remain explicitly untested live.
-
-## 13. Demonstration and reproducibility
-
-### 13.1 Controlled fixtures
-
-The demonstration uses a signed lab APT repository containing these idk-demo-service versions:
-
-- 1.0.0: baseline application with a working health response.
-- 1.1.0: successful update; exposes the expected new version.
-- 1.2.0-broken: controlled failed-health fixture for recovery testing.
-
-A labeled synthetic advisory fixture links the demo package to its expected fixed version. It demonstrates correlation logic using synthetic vulnerability data. A separate live Debian advisory scan is included when network and data availability permit.
-
-Stored test artifacts and reset scripts make the presentation reproducible, independently of whether older vulnerable packages remain available in public repositories.
-
-### 13.2 Showcase sequence
-
-| Step | Demonstration | Evidence to show |
-| --- | --- | --- |
-| 1 | Named agent startup with runtime, provider, model, and environment displayed | Session identity and resolved configuration |
-| 2 | Three-VM discovery and explanation of package/process/port evidence | Timestamped JSON and readable host summary |
-| 3 | Deployment-plan generation followed by operator rejection | Exact scope; zero launched mutation jobs |
-| 4 | New exact-version plan and operator approval | Approval bound to plan hash/targets |
-| 5 | Canary update followed by later batches | Semaphore task, before/after version, health response |
-| 6 | Repeated request for the same desired version | Unchanged packages; no unnecessary interruption |
-| 7 | Separate approved rollout with vm-03 deliberately unreachable | Partial outcome with correct continuation policy |
-| 8 | Broken-fixture deployment to the canary | Failed health, recovery evidence, later hosts untouched |
-| 9 | Preflight-problem and stale-approval scenarios | Both blocked before target mutation |
-| 10 | vm-04 added and selected through configuration | Updated inventory, fresh plan, verified host identity |
-| 11 | Workflow repeated on the other runtime or a second configured provider | Same MCP contract and approval behavior |
-| 12 | Final-report export and lab reset | JSON/Markdown evidence and reproducible baseline |
-
-Incompatible scenarios have separate approved plans and reset points. A recorded full run provides a presentation fallback, clearly labeled as a recording or replay.
-
-### 13.3 Measurements
-
-Performance evaluation compares read-only scan duration for one and three real hosts, followed by a larger synthetic inventory scheduling test. Repeated runs provide median and slowest observed values, accompanied by the test count.
-
-Measurements cover control-node idle/peak RAM, target overhead, provider planning time, deployment time, and recovery time. Configuration limits and reported performance are based on those observations.
-
-## 14. Agile delivery, phases, and completion criteria
-
-### 14.1 Working method
-
-The project follows an Agile approach with a prioritized backlog and short iterations. A one-week sprint is the starting cadence, adjusted around team availability and the school timetable. Each sprint has one observable goal, a small set of selected stories, and a demonstration of the working result.
-
-Sprint planning considers priority, dependencies, available time, and feedback from the previous review. Short team check-ins cover progress and blockers. The sprint ends with a review of the increment and a brief retrospective; feedback changes the next sprint's scope. Unfinished work returns to the backlog with its remaining effort and blockers recorded.
-
-The phases below are backlog epics rather than fixed calendar stages. Discovery, API work, runtime integration, and tests can progress together. Early execution work starts with one controlled host and expands after its approval and verification path works. Phase order expresses dependencies; it does not postpone testing or integration until the end.
-
-Stories describe a user outcome, the affected environment, acceptance criteria, dependencies, and relevant test scenarios. A story is ready for a sprint when its scope and expected result are clear enough to implement and review. Large stories are split into demonstrable increments. The board tracks To do, In progress, In review, and Done, with blockers recorded on the affected item.
-
-Example backlog stories:
-
-| Story | User outcome | Acceptance evidence |
-| --- | --- | --- |
-| AG01: Fleet visibility | As an operator, I can see which hosts have an applicable update and why | Host-tagged inventory, advisory references, explicit unknown results; T01-T07 |
-| AG02: Reviewed deployment | As an operator, I can approve an exact host/version change before it runs | Authenticated approval, matching plan hash, one correlated task; T08-T15 and T21 |
-| AG03: Failed-update recovery | As an operator, I can see whether a failed update restored the previous healthy state | Before/after health evidence, rolled_back or recovery_failed outcome, halted failed-canary rollout; T23 and T28-T30 |
-| AG04: Flexible environment | As an operator, I can add a host or change runtime/provider through configuration | Fresh discovery, unchanged prior approval scope, shared execution policy; T34-T36 and T42 |
-
-The initial priorities are fleet evidence, trusted approval, a working single-host update, and recovery. Runtime parity, wider scenario coverage, scheduling, and presentation follow as these workflows become stable. UI branding remains an optional follow-up. Estimates are reviewed after the first compatibility and lab increments; the phase list is not a promised delivery schedule.
-
-### 14.2 Phase backlog
-
-All checkboxes start unchecked. A checked item represents reviewed work with its acceptance evidence, rather than a feature merely described in this plan.
-
-#### Phase 1 - Compatibility and first connected workflow
-
-The first increment establishes that the selected runtime can call a real project tool and that the control node can reach the execution backend.
-
-- [ ] Recorded compatible versions for Python, FastAPI, the MCP SDK, one runtime/model, Ansible, Semaphore, and osquery.
-- [ ] Named agent profile with inherited provider authentication and a model tool-call readiness check.
-- [ ] Minimal Python MCP read tool, FastAPI endpoint, and temporary SQLite state working on the control node.
-- [ ] Semaphore task launch/status mapping demonstrated with a harmless lab task outside the model's unrestricted access.
-- [ ] Dependency locks, startup configuration, and a repeatable compatibility smoke test.
-
-Acceptance evidence is a recorded tool call, API response, persisted state record, and correlated backend task. Contract and capability checks cover T37-T39. Results determine the dependency versions and the first runtime used in later increments.
-
-#### Phase 2 - Reproducible lab and fixtures
-
-This increment provides the real environment needed for deployment and recovery testing.
-
-- [ ] One control node and three Debian VMs, with Debian 13 as the baseline and a Debian 12 compatibility profile.
-- [ ] Stable host IDs, distinct machine identities, trusted host keys, automation permissions, and private-network configuration.
-- [ ] Bootstrap playbook for osquery, Python, APT dependencies, and the demo application's prerequisites.
-- [ ] Signed demo repository, baseline and healthy-update packages, broken-health fixture, and labeled synthetic advisory data.
-- [ ] Documented rebuild/reset workflow and prepared offline artifacts where applicable.
-
-Acceptance evidence is a rebuilt three-VM lab with healthy baseline responses and a successful reset after a fixture run. Identity and offline checks cover T18 and T46. Test artifacts remain separate from real Debian vulnerability claims.
-
-#### Phase 3 - Discovery and update analysis
-
-The operator can inspect a fleet without changing target package state.
-
-- [ ] File-based inventory behind a replaceable source interface, with host/group resolution and configuration validation.
-- [ ] Allowlisted osquery queries over SSH with per-host identity, timestamps, timeouts, and normalized errors.
-- [ ] Advisory cache with release/source-package mapping and Debian-aware version comparison.
-- [ ] Findings for current, patchable, update_available, no_fixed_candidate, unknown, and unsupported states.
-- [ ] Read-only fleet summary and tests for added/removed hosts, unavailable evidence, and larger synthetic inventories.
-
-Acceptance evidence is an evidence-backed fleet summary and passing T01-T07, T34-T36, and T45 cases at their appropriate test layers. Missing data stays visible, and discovery leaves target package metadata unchanged.
-
-#### Phase 4 - Plans, approval, and durable execution state
-
-The next increment turns findings into a reviewable change and establishes the execution boundary before package mutation is enabled.
-
-- [ ] Validated plan schema with exact hosts, versions, dependency closure, profile, template, playbook commit, and recovery scope.
-- [ ] SQLite plan/approval/run/event records with transaction-backed execution claims, per-host locks, and request deduplication.
-- [ ] FastAPI plan/run reads and authenticated approval/rejection, including environment access and stale-hash validation.
-- [ ] Execution MCP facade connected to a private Semaphore backend, with approval checked independently of model instructions.
-- [ ] Tests for rejection, expiry, forged approval, scope changes, conflicting plans, and duplicate launch requests.
-
-Acceptance evidence is a displayed exact plan, an operator approval record, and a gate that rejects unauthorized or stale requests. T08-T15 and control API/state tests pass before an approved package-changing workflow is exposed.
-
-#### Phase 5 - Deployment, verification, and recovery
-
-Delivery begins with one healthy host, then adds canary batches and controlled failures within the same reviewed workflow.
-
-- [ ] Versioned demo-http profile and Ansible preflight, package/config retention, and exact-version deployment roles.
-- [ ] Verified single-host update, including package version, service state, expected port, and health response.
-- [ ] Canary-first rollout with configured batch limits, explicit host outcomes, and halt behavior after canary failure.
-- [ ] Tested retained-package/config recovery, prior-service-state restoration, and honest recovery_failed reporting.
-- [ ] VM scenarios for locks, low disk space, dependency drift, signatures, partial installation, SSH loss, pause, and idempotence.
-
-Acceptance evidence covers T16-T33, T44, T47, and T48 with before/after state and backend task IDs. A recovered failed canary still halts later mutations, and uncertain execution enters reconciliation before another launch.
-
-#### Phase 6 - Runtime parity and provider compatibility
-
-The second runtime uses the existing deployment services, while provider support remains inherited from each upstream runtime.
-
-- [ ] Second runtime adapter using the same instructions, MCP contracts, plan schema, policy, and reporting format.
-- [ ] Provider catalogs and custom-endpoint configuration available through the supporting runtime, without a separate provider SDK.
-- [ ] Recorded compatibility results for configured provider/model choices and clear inherited-only status for untested entries.
-- [ ] Shared evaluation fixtures for evidence use, rejection, missing fixes, failure summaries, and injected log instructions.
-- [ ] Repeated workflow on Pi and OpenCode, including capability failure and model/provider-switch review rules.
-
-Acceptance evidence is the same approved workflow on both runtimes and a dated compatibility matrix. T37-T42 pass at the relevant layers. Live provider results are limited to available credentials; offline replays are labeled.
-
-#### Phase 7 - Reports, scheduling, and restart handling
-
-This increment makes the results usable beyond a single uninterrupted agent session.
-
-- [ ] Correlated plan/run/task events and JSON/Markdown reports with distinct success, failure, recovery, and unknown outcomes.
-- [ ] Bounded, redacted task-output access and report links to Semaphore history.
-- [ ] Configurable periodic read-only discovery with host-conflict handling and no automatic mutation approval.
-- [ ] Controller restart and ambiguous-launch reconciliation using persisted SQLite state and backend task evidence.
-- [ ] Database/artifact backup procedure, pause/resume accounting, and initial timing/resource measurements.
-
-Acceptance evidence includes accurate partial-fleet reports, a recovered controller session, and T24, T30-T32, T41, and T43 results. Scheduled scans can produce findings and unapproved plans without triggering deployment.
-
-#### Phase 8 - Full demonstration and project handover
-
-The final increment packages the tested workflows into a presentation another team member can reproduce.
-
-- [ ] Scenario runner and recorded pass/fail/skipped results for T01-T48, including reasons for unavailable cases.
-- [ ] Completed 12-step showcase from section 13, with separate plans and reset points for incompatible scenarios.
-- [ ] Observed timing/resource measurements with host count, model/runtime, test conditions, and replay labels.
-- [ ] Setup/reset documentation, sanitized configuration, report examples, dependency locks, minimal README, and matching diagrams.
-- [ ] Full recorded fallback demonstration and a final review of remaining limitations and backlog items.
-
-Acceptance evidence is a clean lab reset followed by a repeatable demonstration. Presentation materials distinguish implemented, tested, unavailable, and future work.
-
-### 14.3 Definition of done and release checklist
-
-A story is done when its acceptance criteria are demonstrated, the relevant tests pass, another team member has reviewed the change, and affected documentation/configuration agrees with the implementation. Test evidence includes the environment and any limitations. Unrun or skipped scenarios remain visible and are not counted as passing.
-
-The project release is ready when the following outcomes are reviewed:
-
-- [ ] Both runtime adapters can run the observe -> plan -> approve -> execute -> verify -> report workflow.
-- [ ] Provider catalogs remain inherited, with documented capability results for configured providers.
-- [ ] Mutation is blocked without a valid matching approval through the execution facade and authenticated operator path.
-- [ ] Exact hosts, versions, dependencies, template, and playbook commit remain within reviewed scope.
-- [ ] Dynamic inventory works without source edits and cannot expand an old approval.
-- [ ] Success, idempotence, rejection, stale approval, offline host, preflight failure, health failure, recovery, and uncertain execution are demonstrated.
-- [ ] Core deterministic/API tests and three-VM integration tests pass; optional/unavailable cases are explicitly recorded.
-- [ ] Setup/reset instructions, sample configuration, report examples, version locks, README, and diagrams agree.
-- [ ] Reports contain evidence and distinguish actual patch success from restored availability.
-
-UI branding refinements remain a separate backlog item and do not redefine completion of the deployment engine.
-
-## 15. Decisions retained for implementation
-
-The architecture uses one control node, Debian targets, SSH transport, a Python/FastAPI backend, SQLite, and the existing Semaphore interface. Custom code covers the fleet adapter, execution policy facade, small control API, runtime adapters, and project-specific profiles/tests.
-
-Schemas and adapters allow integrations to be replaced without changing the deployment workflow. Future OS families, dynamic hypervisor discovery, snapshot recovery, richer UI branding, and additional deployment types would retain the same plan/approval/reporting contracts.
+---
 
+### 9.3 Abderaouf (BECHICHE): Ansible playbooks
+
+**Owns:** `playbooks/*.yml` and their tests on the VMs.
+
+**Tasks**
+
+- [ ] Sprint 1: copy the five playbooks from the guide (`install_osquery`, `osquery_query`, `check_updates`, `patch`, `rollback`) into `playbooks/`, then make each run on the lab.
+- [ ] Sprint 1: `install_osquery.yml` idempotent (second run changes nothing); verify with `osqueryi`.
+- [ ] Sprint 1: `check_updates.yml` is read-only and prints one parseable line per upgradable package.
+- [ ] Sprint 2: `patch.yml` with `serial: 1`, `max_fail_percentage: 0`, `only_upgrade`, and `reboot_required` reported. Verify it **stops at the first failing host**.
+- [ ] Sprint 2: confirm `ansible-playbook --check playbooks/patch.yml -e '{"packages":["curl"]}'` behaves sensibly (apt simulates; `command` tasks are skipped). Document it in `playbooks/README.md`; Wassim relies on it for dry-run.
+- [ ] Sprint 2: `rollback.yml`: test with a pinned previous version really available in the repo/cache; document when it **cannot** work.
+- [ ] Sprint 3: provide a **failure scenario kit** in `scripts/` (below) so the team can force a failing patch.
+- [ ] Sprint 4: run the full playbook set against the `ready` snapshot three times from scratch; fix flaky parts.
+- [ ] Review: Taha's lab/PRs.
+
+**Failure scenario kit** (a broken apt source makes `update_cache` fail on that host; verify the failure is detected as expected on your VM):
+
+```bash
+# break apt on node1 (canary)
+ansible node1 -b -m copy -a "dest=/etc/apt/sources.list.d/broken.list content='deb http://invalid.example/ubuntu jammy main\n'"
+# ... run the agent: the canary must fail, the fleet must NOT be touched ...
+# repair
+ansible node1 -b -m file -a "path=/etc/apt/sources.list.d/broken.list state=absent"
+```
+
+Or simply restore the snapshot: `vagrant snapshot restore ready`.
+
+**Rules for playbooks**
+
+- Only the five playbooks exist. The LLM never chooses or writes one.
+- Variables come from `-e` JSON passed by Python; use `argv`, never shell interpolation of user input.
+- Every playbook is safe to run twice.
+
+**Done when:** each playbook has a documented purpose, runs on the 3 VMs, is idempotent where expected, and the failure kit reproduces a failed patch.
+
+---
+
+### 9.4 Wassim (MEFTAH): tools, security, reports, secrets
+
+**Owns:** `agent/context.py`, `agent/inventory.py`, `agent/tools.py`, `agent/notifier.py`, report generation, `docs/security.md`.
+
+**Tasks**
+
+- [ ] Sprint 1: `agent/__init__.py`, `context.py`, `inventory.py`, `notifier.py` (code below), unit-tested.
+- [ ] Sprint 1: port `tools.py` from the guide, applying fixes 1, 2, 3 of section 4A.
+- [ ] Sprint 2: hardened `validate_sql` (below) with a table of accepted/rejected queries; `run_osquery`, `get_upgradable`, `osv_lookup` (with cache and a timeout, no crash if OSV is down: return `count: 0` and a note).
+- [ ] Sprint 2: `PKG_RE` for package names and version pins; every function validates its inputs first.
+- [ ] Sprint 3: `deploy(..., dry_run=False)` adds `--check`; `rollback`; JSON reports (fix 8) with `network_calls`.
+- [ ] Sprint 3: alert payloads follow fix 15 (nothing sensitive: the company dashboard and the admin page display them in clear). Review every `send_event` call with Baha.
+- [ ] Sprint 3: secrets: only from env; check that no log line prints a key; `.gitignore` audit.
+- [ ] Sprint 4: security review of `api/` and `runner` (path traversal, injection, tenant isolation, token checks of fix 13); written note in `docs/security.md`.
+- [ ] Review: Baha's graph (plan validation, SQL building).
+
+**`agent/context.py`**
+
+```python
+import json
+import os
+import re
+import shutil
+from dataclasses import dataclass
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+DATA_ROOT = Path(os.getenv("DATA_DIR") or ROOT / "data")
+TENANT_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")     # a UUID from the core matches
+DEFAULT_ECOSYSTEM = "Ubuntu:22.04:LTS"
+LOCAL_ID = "local"          # reserved for the CLI, rejected by the API
+
+
+def tenant_path(tenant_id: str) -> Path:
+    if not TENANT_RE.match(tenant_id or ""):
+        raise ValueError("invalid tenant_id")
+    return DATA_ROOT / "tenants" / tenant_id
+
+
+@dataclass(frozen=True)
+class TenantContext:
+    tenant_id: str
+    ecosystem: str = DEFAULT_ECOSYSTEM
+
+    @classmethod
+    def local(cls) -> "TenantContext":
+        return cls(LOCAL_ID, os.getenv("OSV_ECOSYSTEM", DEFAULT_ECOSYSTEM))
+
+    @property
+    def base_dir(self) -> Path:
+        p = tenant_path(self.tenant_id)
+        p.mkdir(parents=True, exist_ok=True)
+        return p
+
+    @property
+    def inventory(self) -> Path:
+        if self.tenant_id == LOCAL_ID:
+            return ROOT / "inventory.ini"
+        return self.base_dir / "inventory.ini"
+
+    @property
+    def checkpoints_db(self) -> Path:
+        return self.base_dir / "checkpoints.db"
+
+    @property
+    def reports_dir(self) -> Path:
+        p = self.base_dir / "reports"
+        p.mkdir(exist_ok=True)
+        return p
+
+
+def save_state(tenant_id: str, data: dict) -> None:
+    base = tenant_path(tenant_id)
+    base.mkdir(parents=True, exist_ok=True)
+    f = base / "state.json"
+    f.write_text(json.dumps(data))
+    os.chmod(f, 0o600)
+
+
+def load_state(tenant_id: str):
+    f = tenant_path(tenant_id) / "state.json"
+    return json.loads(f.read_text()) if f.exists() else None
+
+
+def purge_tenant(tenant_id: str) -> None:
+    shutil.rmtree(tenant_path(tenant_id), ignore_errors=True)    # idempotent (fix 16)
+```
+
+**`agent/inventory.py`** (tenant config to a validated inventory; nothing user-supplied reaches the file unchecked, and key files can only come from `KEYS_DIR`):
+
+```python
+import os
+import re
+from pathlib import Path
+
+from agent.context import TenantContext
+
+NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,30}$")
+ADDR_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$")
+USER_RE = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
+KEY_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
+
+
+def keys_dir() -> Path:
+    return Path(os.path.expanduser(os.getenv("KEYS_DIR", "~/.ssh/lab")))
+
+
+def write_inventory(ctx: TenantContext, hosts: list) -> None:
+    if not isinstance(hosts, list) or not hosts:
+        raise ValueError("hosts must be a non-empty list")
+    groups = {"canary": [], "fleet": []}
+    names = set()
+    for h in hosts:
+        name, addr = str(h.get("name", "")), str(h.get("address", ""))
+        group = h.get("group")
+        user = str(h.get("ssh_user", "vagrant"))
+        key = str(h.get("ssh_key", ""))
+        if not NAME_RE.match(name) or name in names:
+            raise ValueError(f"invalid or duplicate host name: {name!r}")
+        if not ADDR_RE.match(addr) or not USER_RE.match(user) or not KEY_RE.match(key):
+            raise ValueError(f"invalid host definition for {name!r}")
+        if group not in groups:
+            raise ValueError("group must be 'canary' or 'fleet'")
+        names.add(name)
+        groups[group].append(
+            f"{name} ansible_host={addr} ansible_user={user} "
+            f"ansible_ssh_private_key_file={keys_dir() / key}"
+        )
+    if not groups["canary"]:
+        raise ValueError("at least one canary host is required")
+    lines = []
+    for g, items in groups.items():
+        lines.append(f"[{g}]")
+        lines.extend(items)
+        lines.append("")
+    lines += [
+        "[all:vars]",
+        "ansible_python_interpreter=/usr/bin/python3",
+        "ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'",
+    ]
+    ctx.inventory.write_text("\n".join(lines) + "\n")
+```
+
+**`agent/notifier.py`** (never raises, never logs keys; the core displays `data` in clear, so keep it minimal):
+
+```python
+import logging
+import os
+
+import httpx
+
+from agent.context import TenantContext, load_state
+
+log = logging.getLogger("notifier")
+SEVERITIES = {"info", "low", "medium", "high", "critical"}
+
+
+def send_event(ctx: TenantContext, event_type: str, severity: str, data: dict) -> bool:
+    if severity not in SEVERITIES:
+        severity = "info"
+    state = load_state(ctx.tenant_id) or {}
+    key = state.get("tenant_api_key")
+    if not key:
+        return False                     # CLI/local mode: nothing to notify
+    url = os.getenv("NOYAU_URL", "http://localhost:8000") + "/webhooks/agent-events"
+    try:
+        r = httpx.post(
+            url,
+            headers={"Authorization": f"Bearer {key}", "X-Tenant-Id": ctx.tenant_id},
+            json={"event_type": event_type, "severity": severity, "data": data},
+            timeout=5,
+        )
+        return r.is_success
+    except httpx.HTTPError as e:
+        log.warning("webhook failed: %s", type(e).__name__)
+        return False
+```
+
+**Hardened `validate_sql`** (replaces the guide's version; keeps `ALLOWED_TABLES` = `deb_packages`, `os_version`, `system_info`, `uptime`, `kernel_info`, `listening_ports`, `processes`, `users`):
+
+```python
+import re
+
+FORBIDDEN = re.compile(r"(--|/\*|\*/|;|\battach\b|\bpragma\b)", re.I)
+FROM_CLAUSE = re.compile(
+    r"(?is)\bfrom\b(.*?)(?=\bwhere\b|\bgroup\b|\border\b|\blimit\b|\bhaving\b|\bunion\b|$)"
+)
+TABLE_REF = re.compile(r"(?i)\b(?:from|join)\s+([a-z_][a-z0-9_]*)")
+
+
+def validate_sql(sql: str) -> str:
+    s = (sql or "").strip().rstrip(";").strip()
+    if not re.match(r"(?is)^select\s", s) or FORBIDDEN.search(s):
+        raise ValueError("Only a single SELECT statement is allowed")
+    for clause in FROM_CLAUSE.findall(s):
+        if "," in clause or "(" in clause:
+            raise ValueError("Comma joins and sub-selects in FROM are not allowed")
+    tables = {t.lower() for t in TABLE_REF.findall(s)}
+    if not tables or not tables <= ALLOWED_TABLES:
+        raise ValueError(f"Table not allowed: {sorted(tables - ALLOWED_TABLES)}")
+    return s
+```
+
+**Done when:** all inputs are validated before use; the hardening cases in `tests/test_tools.py` pass; no key can appear in a log, a report or an alert; tenant data cannot escape its folder.
+
+---
+
+### 9.5 Baha (GAHTAR): agent core (LLM, graph, runner)
+
+**Owns:** `agent/llm.py`, `agent/graph.py`, `agent/runner.py`, prompts.
+
+**Tasks**
+
+- [ ] Sprint 1: port `llm.py` from the guide; two providers tested (Gemini + one fallback); model names only from `.env`.
+- [ ] Sprint 2: JSON validation (reject any plan whose package is not in the real candidate list, any priority/action outside the allowed values); a test with a deliberately broken LLM answer.
+- [ ] Sprint 2: `graph.py` nodes `collect`, `enrich`, `analyze` bound to `ctx` via `build(ctx)`; the LLM receives **only** package names, versions, CVE ids/summaries, host count. Never hostnames or IPs.
+- [ ] Sprint 3: nodes `approve` (`interrupt()`), `dryrun`, `canary`, `verify`, `fleet`, `rollback`, `report`, with conditional edges (fixes 5, 6, 7).
+- [ ] Sprint 3: call `notifier.send_event` at the points listed in section 3; payloads follow fix 15 (counts, package names, run id).
+- [ ] Sprint 3: `runner.py` (below) and the checkpoint resume test: kill the process while waiting for approval, restart, approve, the run finishes.
+- [ ] Sprint 4: prompt tuning on real lab data; keep the plan short and deterministic (temperature low).
+- [ ] Review: Wassim's tools and Dhia's API run endpoints.
+
+**How `build(ctx)` binds the tenant**: define nodes as functions `(state, ctx)` and register them with `functools.partial(node, ctx=ctx)` (or define them inside `build`). Compile in the runner with a SQLite checkpointer pointing at `ctx.checkpoints_db`.
+
+**Why runs are threads:** the core gives up after 10 s (F4) and the API must stay responsive; a run can last minutes. `start_run` returns immediately with the run id.
+
+**`agent/runner.py`** (sketch to adapt; check the exact LangGraph API of the installed version, `interrupt`/`Command(resume=...)` usage and `get_state`):
+
+```python
+import json
+import threading
+import uuid
+
+from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.types import Command
+
+from agent.context import TenantContext
+from agent.graph import build
+
+_LOCK = threading.Lock()
+
+
+def _runs_file(ctx: TenantContext):
+    return ctx.base_dir / "runs.json"
+
+
+def _set(ctx: TenantContext, run_id: str, **fields) -> dict:
+    with _LOCK:
+        f = _runs_file(ctx)
+        runs = json.loads(f.read_text()) if f.exists() else {}
+        runs.setdefault(run_id, {"run_id": run_id}).update(fields)
+        f.write_text(json.dumps(runs, default=str))
+        return runs[run_id]
+
+
+def get_run(ctx: TenantContext, run_id: str) -> dict:
+    f = _runs_file(ctx)
+    runs = json.loads(f.read_text()) if f.exists() else {}
+    if run_id not in runs:
+        raise KeyError("unknown run")
+    return runs[run_id]
+
+
+def _execute(ctx: TenantContext, run_id: str, payload) -> dict:
+    cfg = {"configurable": {"thread_id": run_id}}
+    _set(ctx, run_id, state="running", error=None)
+    try:
+        with SqliteSaver.from_conn_string(str(ctx.checkpoints_db)) as cp:
+            app = build(ctx).compile(checkpointer=cp)
+            out = app.invoke(payload, cfg)
+            snap = app.get_state(cfg)
+        if snap.next:                                   # paused on interrupt()
+            return _set(ctx, run_id, state="waiting_approval", plan=out.get("plan"))
+        return _set(ctx, run_id, state="done", report=out.get("report"))
+    except Exception as e:                              # never leak details/keys
+        return _set(ctx, run_id, state="failed", error=type(e).__name__)
+
+
+def run(ctx: TenantContext) -> dict:
+    return _execute(ctx, uuid.uuid4().hex[:8], {})
+
+
+def resume(ctx: TenantContext, run_id: str, decision: str) -> dict:
+    return _execute(ctx, run_id, Command(resume=decision))
+
+
+def start_run(ctx: TenantContext) -> str:
+    run_id = uuid.uuid4().hex[:8]
+    _set(ctx, run_id, state="running")
+    threading.Thread(target=_execute, args=(ctx, run_id, {}), daemon=True).start()
+    return run_id
+
+
+def start_resume(ctx: TenantContext, run_id: str, decision: str) -> None:
+    _set(ctx, run_id, state="running")
+    threading.Thread(
+        target=_execute, args=(ctx, run_id, Command(resume=decision)), daemon=True
+    ).start()
+```
+
+**Done when:** one command runs collect → … → report on the lab; an invalid or dangerous LLM answer never reaches a playbook; resume after restart works; alerts are sent and carry nothing sensitive.
+
+---
+
+### 9.6 Dhia Eddine (LAGHROUR): API, Docker, tests, compliance
+
+**Owns:** `api/main.py`, `Dockerfile`, `tests/`, `scripts/simulate_core.sh`, the contract checklist, the end-to-end test (section 5.6).
+
+**Tasks**
+
+- [ ] Sprint 0/1: `api/main.py` with the 5 endpoints, `PUT config` and the envelope everywhere (below), runnable with `uvicorn api.main:app --port 9000`; `/exchange/notify` as a no-op returning the envelope.
+- [ ] Sprint 1: `scripts/simulate_core.sh` (section 5.5) passing; `tests/test_contract.py` (below) green.
+- [ ] Sprint 2: `tests/test_tools.py`: table of accepted/rejected SQL (include comma joins, `file`, `curl`, subselect, `;`, comments), package-name regex cases, tenant id cases (`../x`, empty, 65 chars, a real UUID).
+- [ ] Sprint 3: wire `POST /tenant/{id}/runs`, `GET .../runs/{run_id}`, `POST .../approve` to `runner` (stub it until Baha delivers).
+- [ ] Sprint 4: `Dockerfile` builds and runs without manual steps; test with the commands below; run the **whole scenario of section 5.6** with the real core (submit, certify, publish, subscribe from the web UI, `PUT config`, run, alerts in `/mon-compte`, cancel and purge).
+- [ ] Sprint 4: `tests/test_scenarios.py`: failed canary leaves the fleet untouched; rollback path; invalid LLM output rejected; no hostname/IP in the LLM prompt (use a mock provider).
+- [ ] Sprint 4: two-tenant isolation test through the real HTTP API against the running core.
+- [ ] Review: Baha's runner and Wassim's inventory code.
+
+**`api/main.py`**
+
+```python
+import hmac
+import re
+import time
+
+from fastapi import FastAPI, Header, HTTPException
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+from agent.context import (
+    DEFAULT_ECOSYSTEM, LOCAL_ID, TENANT_RE, TenantContext,
+    load_state, purge_tenant, save_state,
+)
+from agent.inventory import write_inventory
+
+app = FastAPI(title="AI Patch Agent")
+STARTED = time.time()
+RUN_ID_RE = re.compile(r"^[a-f0-9]{8}$")
+
+
+# ---------- envelope ----------
+def ok(data):
+    return {"status": "ok", "data": data, "error": None}
+
+
+def fail(code: int, msg: str):
+    return JSONResponse(status_code=code, content={"status": "error", "data": None, "error": msg})
+
+
+@app.exception_handler(StarletteHTTPException)
+async def _http_error(_, exc):
+    return fail(exc.status_code, str(exc.detail))
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_error(_, exc):
+    return fail(422, "invalid request")
+
+
+@app.exception_handler(Exception)
+async def _unexpected(_, exc):
+    return fail(500, "internal error")       # never leak details
+
+
+# ---------- helpers ----------
+def _tenant(x_tenant_id):
+    if not x_tenant_id or x_tenant_id == LOCAL_ID or not TENANT_RE.match(x_tenant_id):
+        raise HTTPException(400, "invalid or missing X-Tenant-Id")
+    return x_tenant_id
+
+
+def _bearer(authorization):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(401, "missing bearer token")
+    return authorization[7:]
+
+
+def _check_key(tenant_id, authorization):
+    state = load_state(tenant_id)
+    if state is None:
+        raise HTTPException(404, "tenant not active")
+    if not hmac.compare_digest(_bearer(authorization), state["tenant_api_key"]):
+        raise HTTPException(401, "invalid token")
+    return state
+
+
+def _authed_ctx(tenant_id, authorization, x_tenant_id):
+    if _tenant(x_tenant_id) != tenant_id:
+        raise HTTPException(403, "tenant mismatch")
+    state = _check_key(tenant_id, authorization)
+    return TenantContext(tenant_id, state.get("ecosystem", DEFAULT_ECOSYSTEM))
+
+
+def _apply_hosts(ctx, config) -> bool:
+    """Write the inventory if hosts are given. Returns True if hosts were applied."""
+    hosts = config.get("hosts")
+    if not hosts:
+        return False
+    try:
+        write_inventory(ctx, hosts)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return True
+
+
+# ---------- the 5 mandatory endpoints ----------
+@app.get("/health")
+def health():
+    return ok({"uptime_seconds": int(time.time() - STARTED)})
+
+
+@app.post("/tenant/activate")
+def activate(
+    body: dict,
+    authorization: str = Header(None),
+    x_tenant_id: str = Header(None, alias="X-Tenant-Id"),
+):
+    tid = _tenant(x_tenant_id)
+    key = _bearer(authorization)
+    config = body.get("config") or {}
+    ctx = TenantContext(tid, str(config.get("ecosystem", DEFAULT_ECOSYSTEM)))
+    # The web UI of the core always activates with an EMPTY config (F7):
+    # activation must succeed; hosts arrive later through PUT /tenant/{id}/config.
+    configured = _apply_hosts(ctx, config)
+    save_state(tid, {"tenant_api_key": key, "ecosystem": ctx.ecosystem, "configured": configured})
+    return ok({"activated": True})
+
+
+@app.post("/tenant/deactivate")
+def deactivate(
+    authorization: str = Header(None),
+    x_tenant_id: str = Header(None, alias="X-Tenant-Id"),
+):
+    tid = _tenant(x_tenant_id)
+    state = load_state(tid)
+    if state is not None:                      # the core always sends the key (F6)
+        _check_key(tid, authorization)
+    purge_tenant(tid)                          # idempotent
+    return ok({"deactivated": True, "data_purged": True})
+
+
+@app.get("/tenant/{tenant_id}/status")
+def tenant_status(tenant_id: str, x_tenant_id: str = Header(None, alias="X-Tenant-Id")):
+    # The core never calls this one (F3); the teacher may check it by hand, so no auth.
+    if not TENANT_RE.match(tenant_id) or tenant_id == LOCAL_ID:
+        raise HTTPException(400, "invalid tenant id")
+    if x_tenant_id and x_tenant_id != tenant_id:
+        raise HTTPException(403, "tenant mismatch")
+    state = load_state(tenant_id)
+    if state is None:
+        raise HTTPException(404, "tenant not active")
+    return ok({"state": "running", "configured": state.get("configured", False)})
+
+
+@app.get("/config-schema")
+def config_schema():
+    return ok({
+        "type": "object",
+        "properties": {
+            "ecosystem": {"type": "string", "default": DEFAULT_ECOSYSTEM,
+                          "description": "OSV ecosystem matching the target OS"},
+            "hosts": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "required": ["name", "address", "group", "ssh_key"],
+                    "properties": {
+                        "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,30}$"},
+                        "address": {"type": "string"},
+                        "group": {"type": "string", "enum": ["canary", "fleet"]},
+                        "ssh_user": {"type": "string", "default": "vagrant"},
+                        "ssh_key": {"type": "string",
+                                    "description": "file name inside the keys directory"},
+                    },
+                },
+            },
+        },
+    })
+
+
+# optional endpoint of the contract: we consume nothing, so it is a no-op
+@app.post("/exchange/notify")
+def exchange_notify(body: dict):
+    return ok({"processed": True})
+
+
+# ---------- our own endpoints (agent business) ----------
+@app.put("/tenant/{tenant_id}/config")
+def configure(tenant_id: str, body: dict, authorization: str = Header(None),
+              x_tenant_id: str = Header(None, alias="X-Tenant-Id")):
+    """Set or replace the hosts after activation. The company uses the tenant key
+    shown in /mon-compte of the core."""
+    _authed_ctx(tenant_id, authorization, x_tenant_id)
+    state = load_state(tenant_id)
+    config = body.get("config") or {}
+    ecosystem = str(config.get("ecosystem", state.get("ecosystem", DEFAULT_ECOSYSTEM)))
+    ctx = TenantContext(tenant_id, ecosystem)
+    configured = _apply_hosts(ctx, config) or state.get("configured", False)
+    state.update(ecosystem=ecosystem, configured=configured)
+    save_state(tenant_id, state)
+    return ok({"configured": configured})
+
+
+@app.post("/tenant/{tenant_id}/runs")
+def create_run(tenant_id: str, authorization: str = Header(None),
+               x_tenant_id: str = Header(None, alias="X-Tenant-Id")):
+    from agent import runner
+    ctx = _authed_ctx(tenant_id, authorization, x_tenant_id)
+    if not load_state(tenant_id).get("configured"):
+        raise HTTPException(409, "no hosts configured for this tenant (PUT /tenant/{id}/config)")
+    return ok({"run_id": runner.start_run(ctx), "state": "running"})
+
+
+@app.get("/tenant/{tenant_id}/runs/{run_id}")
+def read_run(tenant_id: str, run_id: str, authorization: str = Header(None),
+             x_tenant_id: str = Header(None, alias="X-Tenant-Id")):
+    from agent import runner
+    ctx = _authed_ctx(tenant_id, authorization, x_tenant_id)
+    if not RUN_ID_RE.match(run_id):
+        raise HTTPException(400, "invalid run id")
+    try:
+        return ok(runner.get_run(ctx, run_id))
+    except KeyError:
+        raise HTTPException(404, "unknown run")
+
+
+@app.post("/tenant/{tenant_id}/runs/{run_id}/approve")
+def approve_run(tenant_id: str, run_id: str, body: dict, authorization: str = Header(None),
+                x_tenant_id: str = Header(None, alias="X-Tenant-Id")):
+    from agent import runner
+    ctx = _authed_ctx(tenant_id, authorization, x_tenant_id)
+    if not RUN_ID_RE.match(run_id) or body.get("decision") not in ("yes", "no"):
+        raise HTTPException(400, "invalid run id or decision")
+    runner.start_resume(ctx, run_id, body["decision"])
+    return ok({"run_id": run_id, "state": "running"})
+```
+
+**`tests/test_contract.py`**
+
+```python
+import os
+import tempfile
+import uuid
+
+os.environ["DATA_DIR"] = tempfile.mkdtemp()          # before importing the app
+
+from fastapi.testclient import TestClient            # noqa: E402
+from agent.context import DATA_ROOT                  # noqa: E402
+from api.main import app                             # noqa: E402
+
+c = TestClient(app)
+
+
+def h(tenant, key=None):
+    return {"Authorization": f"Bearer {key or 'key-' + tenant}", "X-Tenant-Id": tenant}
+
+
+def assert_envelope(r):
+    j = r.json()
+    assert set(j) == {"status", "data", "error"}
+    assert j["status"] in ("ok", "error")
+    return j
+
+
+def test_health():
+    j = assert_envelope(c.get("/health"))
+    assert j["status"] == "ok" and "uptime_seconds" in j["data"]
+
+
+def test_config_schema():
+    assert assert_envelope(c.get("/config-schema"))["status"] == "ok"
+
+
+def test_errors_use_the_envelope():
+    for r in (c.get("/nope"), c.post("/tenant/activate", json={}),
+              c.post("/tenant/activate", json={}, headers={"X-Tenant-Id": "../x"})):
+        assert assert_envelope(r)["status"] == "error"
+
+
+def test_lifecycle_and_isolation():
+    assert c.post("/tenant/activate", json={"config": {}}, headers=h("acme")).status_code == 200
+    assert c.post("/tenant/activate", json={"config": {}}, headers=h("globex")).status_code == 200
+    assert assert_envelope(c.get("/tenant/acme/status"))["data"]["state"] == "running"
+
+    r = c.get("/tenant/acme/status", headers={"X-Tenant-Id": "globex"})   # cross-tenant
+    assert r.status_code == 403 and assert_envelope(r)["status"] == "error"
+
+    r = c.post("/tenant/deactivate", headers=h("acme"))
+    assert assert_envelope(r)["data"]["data_purged"] is True
+    assert not (DATA_ROOT / "tenants" / "acme").exists()
+    assert c.get("/tenant/acme/status").status_code == 404
+    assert c.get("/tenant/globex/status").status_code == 200              # untouched
+
+
+def test_core_style_uuid_tenant_and_empty_body_deactivate():
+    tid = str(uuid.uuid4())                                               # the core uses UUIDs
+    assert c.post("/tenant/activate", json={"config": {}}, headers=h(tid)).status_code == 200
+    assert c.post("/tenant/deactivate", json={}, headers=h(tid)).status_code == 200
+
+
+def test_deactivate_requires_the_right_token():
+    c.post("/tenant/activate", json={"config": {}}, headers=h("initech"))
+    r = c.post("/tenant/deactivate", headers=h("initech", key="wrong"))
+    assert r.status_code == 401 and assert_envelope(r)["status"] == "error"
+    assert c.get("/tenant/initech/status").status_code == 200             # still there
+    assert c.post("/tenant/deactivate", headers=h("initech")).status_code == 200
+
+
+def test_config_endpoint_needs_token_and_validates_hosts():
+    c.post("/tenant/activate", json={"config": {}}, headers=h("hooli"))
+    assert c.put("/tenant/hooli/config", json={"config": {}},
+                 headers=h("hooli", key="wrong")).status_code == 401
+    bad = {"config": {"hosts": [{"name": "BAD NAME", "address": "x", "group": "canary", "ssh_key": "k"}]}}
+    assert c.put("/tenant/hooli/config", json=bad, headers=h("hooli")).status_code == 400
+    good = {"config": {"hosts": [{"name": "node1", "address": "192.168.56.11",
+                                  "group": "canary", "ssh_key": "node1"}]}}
+    r = c.put("/tenant/hooli/config", json=good, headers=h("hooli"))
+    assert assert_envelope(r)["data"]["configured"] is True
+
+
+def test_runs_refused_until_configured():
+    c.post("/tenant/activate", json={"config": {}}, headers=h("umbrella"))
+    assert c.post("/tenant/umbrella/runs", headers=h("umbrella")).status_code == 409
+
+
+def test_reserved_and_malicious_tenant_ids_are_rejected():
+    for t in ("local", "..", "a/b"):
+        r = c.post("/tenant/activate", json={"config": {}}, headers=h(t))
+        assert r.status_code in (400, 422)
+```
+
+**`Dockerfile`** (repo root; use `requirements.lock` once Taha has produced it):
+
+```dockerfile
+FROM python:3.11-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends openssh-client \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt \
+ && ansible-galaxy collection install ansible.posix
+
+COPY . .
+
+ENV DATA_DIR=/app/data KEYS_DIR=/keys
+EXPOSE 9000
+
+HEALTHCHECK --interval=30s --timeout=5s \
+  CMD python -c "import httpx,sys; sys.exit(0 if httpx.get('http://localhost:9000/health').status_code==200 else 1)"
+
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "9000"]
+```
+
+```bash
+docker build -t ai-patch-agent .
+docker run --rm -p 9000:9000 --env-file .env \
+  -e NOYAU_URL=http://host.docker.internal:8000 \
+  --add-host=host.docker.internal:host-gateway \
+  -v ~/.ssh/lab:/keys:ro \
+  -v ai_patch_data:/app/data \
+  ai-patch-agent
+curl localhost:9000/health
+scripts/simulate_core.sh http://localhost:9000
+```
+
+> `.dockerignore` must exclude `data/`, `.env`, `noyau-local/`, `.git/`, `.venv*/`.
+
+**Submit to the local core** (core running on :8000): `python scripts/submit_agent.py http://localhost:8000`, then follow section 5.6 from step 4.
+
+**Done when:** `pytest` is green; the image builds and runs from scratch; `simulate_core.sh` passes against the container; the full scenario of section 5.6 runs through the real core without errors.
+
+---
+
+## 10. Cross-review pairs
+
+| Author | Reviewer | Looks at |
+|---|---|---|
+| Taha | Abderaouf | lab reproducibility, scripts, `docs/core-local.md` |
+| Abderaouf | Taha | playbooks on a fresh lab |
+| Wassim | Baha | validation, inputs reaching playbooks, alert payloads |
+| Baha | Wassim | plan validation, SQL building, prompts (no host data) |
+| Dhia | Ahmed | contract compliance of `api/` (envelope, 10 s, token checks) |
+| Ahmed | Dhia | docs, manifest and `submit_agent.py` vs the contract and the core |
+
+---
+
+## 11. Contract checklist (before every milestone and before submission)
+
+Items marked **(core)** come from the verified behavior of the core (section 1B).
+
+- [ ] The 5 mandatory endpoints answer with the envelope `{status, data, error}`, **errors included** (unknown route, bad input, wrong token).
+- [ ] Paths are exactly `/health`, `/tenant/activate`, `/tenant/deactivate`, `/tenant/{tenant_id}/status`, `/config-schema` **(core: fixed defaults, F2)**.
+- [ ] Every contract endpoint answers in well under 10 s (`curl -m 10` in `simulate_core.sh`) **(core: F4)**.
+- [ ] Failure to activate returns a **non-2xx** code; success returns HTTP 200 with `status: "ok"` **(core: F4)**.
+- [ ] Activation works with an **empty** config, and after a web-UI subscription the agent can be configured with `PUT /tenant/{id}/config` **(core: F7)**.
+- [ ] A **UUID** tenant id works **(core: F6)**.
+- [ ] Manifest valid, slug unique, `filiere = cybersecurite`, `base_url` port = Dockerfile port.
+- [ ] Submission done with `scripts/submit_agent.py` (flat payload), not the raw manifest **(core: F1)**.
+- [ ] Two test tenants never see each other's data (hosts, runs, reports).
+- [ ] `POST /tenant/deactivate` really deletes the tenant folder, is idempotent, and checks the bearer token **(core: F6, F10)**.
+- [ ] `docker build` then `docker run` works with no manual step (only environment variables).
+- [ ] No secret in code, in Git history, or in logs.
+- [ ] Every outbound service is listed in the execution report (`network_calls`).
+- [ ] No call to another agent.
+- [ ] Alerts reach `/webhooks/agent-events` with a valid severity, appear in `/mon-compte`, and contain nothing sensitive **(core: F11)**.
+- [ ] Agent submitted, then certified and published from `/admin`, then subscribed from the web UI with badge "Actif" (not "Suspendu").
+
+---
+
+## 12. Questions for the supervisors (Ahmed sends the open ones in Sprint 0)
+
+**Answered by the core's code** (no need to ask, but mention them if the teacher disagrees):
+
+1. ~~Which headers on `deactivate` and `status`?~~ `deactivate`: `POST` with `Authorization: Bearer <key>`, `X-Tenant-Id` and body `{}`. `status`: never called by the core (F3, F6).
+2. ~~Empty config at activation?~~ Yes: the web UI always sends `{}`; only the API `POST /subscriptions` can send a config (F7).
+
+**Still open:**
+
+3. Which `base_url` host will be used at certification and demo (`localhost:9000`, a Docker service name)? Will the demo machine be able to reach our VM lab?
+4. Is a call to an external LLM API (Gemini, OpenRouter, Groq) and to `api.osv.dev` acceptable if listed in the execution report?
+5. What is the exact file naming and the deadline of each deliverable (charter, minutes, plan, report, follow-up, final presentation)?
+6. Can we have `GUIDE_GITHUB_NOYAU.docx` (how repositories must be organized)?
+7. `team_name` and contact email to put in the manifest.
+8. The guide says `curl ... -d @agent.manifest.json` but the core's `POST /agents/submit` requires a flat payload (it returns 422 with the raw manifest). Is there an updated guide or core? Is `submit_agent.py` an acceptable way to submit?
+9. The `/admin` page has no activate/deactivate buttons. How will you test deactivation: through `POST /subscriptions/{id}/cancel`? Will you also call `GET /tenant/{id}/status` yourself, and with which headers?
+10. Will the core be run by you at certification (on your machine), and will the agent be started by us or by you from our Docker image?
+
+---
+
+## 13. Risks specific to this plan
+
+| Risk | Mitigation |
+|---|---|
+| The agent container cannot reach the VM lab network | Taha tests it in Sprint 1; fallback: demo with the agent running directly in WSL and Docker only for certification |
+| Core and agent cannot reach each other (Windows host vs WSL vs Docker) | Section 5.4 table; Taha tests every row in Sprint 1; `simulate_core.sh` isolates agent problems from network problems |
+| A wrong envelope or a slow answer suspends the subscription (silently in the web UI) | Envelope tests, global exception handlers, `curl -m 10` in `simulate_core.sh`, runs in threads |
+| The agent is "Actif" but unusable because the web UI sent no hosts | `PUT /tenant/{id}/config`, step 7 of the demo script, covered by tests |
+| Re-subscribing generates a new tenant key and breaks scripts that kept the old one | `activate` always overwrites the stored key; read the current key in `/mon-compte` before each manual call |
+| PostgreSQL or the core's pinned versions break local setups | Separate virtual environment for the core; PostgreSQL via Docker; `docs/core-local.md` |
+| The teacher updates the core or the guide | `noyau-local/` is replaceable; re-run `simulate_core.sh` and the scenario of 5.6; update `PROJECT_FULL_REFERENCE.md` |
+| Alert data shown in clear to the company and the admin | Fix 15: counts, package names and run id only |
+| Free LLM quotas hit during the demo | Fallback providers, a cached plan for the demo, mock provider for tests |
+| Different environments on different PCs | `check_env.sh` green is mandatory, `requirements.lock` |
+| One module blocks everybody | Stubs against the interfaces of section 3; cross-review pairs |
+| Last-week rush | Demo rehearsal from Sprint 4; Sprint 5 reserved for report and polish |
