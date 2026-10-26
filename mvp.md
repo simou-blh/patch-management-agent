@@ -1,6 +1,6 @@
 # AI Patch Agent — MVP
 
-## Objective ...
+## Objective
 
 Build an AI-assisted patch-management agent that inventories a small Debian fleet, identifies security updates, proposes a prioritized patch plan, requests human approval, and deploys approved changes with canary verification and recovery.
 
