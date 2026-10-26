@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MVP patch plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["run_id", "targets", "canary", "packages", "verification", "recovery"],
+  "properties": {
+    "run_id": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$"},
+    "targets": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string"}},
+    "canary": {"type": "string"},
+    "packages": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["host", "name", "current_version", "proposed_version", "action", "priority", "advisories", "reason"],
+        "properties": {
+          "host": {"type": "string"},
+          "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9+.-]+(:[a-z0-9]+)?$"},
+          "current_version": {"type": "string", "minLength": 1},
+          "proposed_version": {"type": ["string", "null"], "minLength": 1},
+          "action": {"enum": ["patch", "defer"]},
+          "priority": {"enum": ["critical", "high", "medium", "low"]},
+          "advisories": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "reason": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "verification": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "recovery": {
+      "type": "object", "additionalProperties": false,
+      "required": ["snapshot", "previous_packages", "config_backup"],
+      "properties": {
+        "snapshot": {"type": "string", "minLength": 1},
+        "previous_packages": {"type": "boolean"},
+        "config_backup": {"type": "boolean"}
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+---
+- name: Approved patch implementation gate
+  hosts: all
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Block deployment until the approval-bound executor is implemented
+      ansible.builtin.fail:
+        msg: >-
+          Foundation only. No packages were changed. Implement the Semaphore
+          facade, exact host/package/version binding, canary verification and
+          dependency-change validation before enabling this playbook.

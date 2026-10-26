@@ -1,0 +1,14 @@
+---
+- name: Recovery implementation gate
+  hosts: all
+  gather_facts: false
+  serial: 1
+  any_errors_fatal: true
+  tasks:
+    - name: Block until approved recovery actions are implemented
+      ansible.builtin.fail:
+        msg: >-
+          Foundation only. No recovery was attempted. Implement diagnostic
+          capture, bounded APT repair, cached previous packages, configuration
+          restore and post-recovery health checks. Never report rollback success
+          without checking observed versions and health.

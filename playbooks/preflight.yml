@@ -1,0 +1,11 @@
+---
+- name: Preflight implementation gate
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Block until all recovery and readiness checks are implemented
+      ansible.builtin.fail:
+        msg: >-
+          Foundation only. Implement SSH/privileges, free disk, APT locks/health,
+          candidate freshness, configuration backup and cached recovery artifacts
+          before this template can report a host ready.

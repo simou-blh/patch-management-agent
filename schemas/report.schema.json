@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Foundation deployment request report (extend for live rollout)",
+  "type": "object", "additionalProperties": false,
+  "required": ["run_id", "timestamp", "plan_hash", "approval", "final_status", "reason", "jobs", "recovery"],
+  "properties": {
+    "run_id": {"type": "string"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "plan_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "approval": {"enum": ["pending", "approved", "rejected"]},
+    "final_status": {"const": "blocked"},
+    "reason": {"type": "string"},
+    "jobs": {"type": "array", "maxItems": 0},
+    "recovery": {"type": "array", "maxItems": 0}
+  }
+}

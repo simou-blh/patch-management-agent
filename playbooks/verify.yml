@@ -1,0 +1,22 @@
+---
+- name: Read observed Debian package versions
+  hosts: all
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Read versions through a fixed osquery query
+      ansible.builtin.command:
+        argv:
+          - osqueryi
+          - --json
+          - "SELECT name, version, source FROM deb_packages;"
+      register: observed_packages
+      changed_when: false
+
+    - name: Return observations for comparison against the approved plan
+      ansible.builtin.debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          packages: "{{ observed_packages.stdout | from_json }}"
+    # TODO: compare exact versions and run the configured health checks.
+    # A successful read is not a passed deployment verification.

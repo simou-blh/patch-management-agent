@@ -6,9 +6,25 @@ Build an AI-assisted patch-management agent that inventories a small Debian flee
 
 ## Architecture baseline
 
-This MVP follows the attached architecture: **Pi or OpenCode, MCP tools, osquery, Semaphore, Ansible, and Debian VMs**.
+This MVP follows the attached architecture: **OpenCode, MCP tools, osquery, Semaphore, Ansible, and Debian VMs**.
 
 The earlier Python/LangGraph workflow and Ubuntu/OSV stack are superseded for this scope.
+
+Implementation defaults: **OpenCode**, one operator-selected provider, the existing
+**Kali WSL2** control node on this machine, and three headless **Debian 12** VirtualBox
+VMs managed by Vagrant. Semaphore uses **SQLite**, without a separate database server.
+Python 3.12+ implements the project MCP adapters; it is not a replacement agent runtime.
+
+The repository currently contains a tested foundation: read-only SSH inventory,
+plan validation and hash-bound operator approval. Live deployment remains blocked.
+See [plan.md](plan.md) for the remaining work and [SETUP.md](SETUP.md) for setup.
+
+The committed Docker and VM configurations are shared team requirements for live
+patch testing. Provisioning them may be deferred while testing local MCP and approval
+behavior; a working patching MVP must pass the real environment gates in `SETUP.md`.
+For routine assessment, use the compact `patch` agent (three work steps, concise
+answers, and only the project MCP tools). This limits unnecessary model work without
+claiming a provider-independent total token cap.
 
 ## Target environment
 
@@ -23,7 +39,7 @@ The earlier Python/LangGraph workflow and Ubuntu/OSV stack are superseded for th
 
 | Component | MVP choice |
 |---|---|
-| Agent runtime | Choose one: Pi or OpenCode |
+| Agent runtime | OpenCode |
 | Model | One provider supported by the chosen runtime |
 | Tool interface | MCP |
 | Inventory and verification | osquery through a project fleet adapter |
@@ -223,7 +239,11 @@ The report must contain:
 - Notifications and a custom dashboard.
 - Multi-user RBAC.
 - FleetDM, AWX, and large-fleet optimization.
-- Platform-specific API integration until the integration contract is available.
+- Platform-specific API integration during this foundation phase.
+
+The teacher's contract is preserved in `PROJECT_FULL_REFERENCE.md`. Its HTTP service,
+tenant isolation, manifest and core integration belong to a later phase; they are
+not requirements for bringing up this MVP foundation.
 
 ## Demonstration
 
