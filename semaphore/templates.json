@@ -1,0 +1,10 @@
+{
+  "status": "design-only; not a Semaphore API import payload",
+  "templates": [
+    {"name": "inspect", "playbook": "playbooks/inspect.yml", "kind": "read-only"},
+    {"name": "preflight", "playbook": "playbooks/preflight.yml", "kind": "blocked scaffold"},
+    {"name": "patch", "playbook": "playbooks/patch.yml", "kind": "blocked scaffold"},
+    {"name": "verify", "playbook": "playbooks/verify.yml", "kind": "read-only observations"},
+    {"name": "recover", "playbook": "playbooks/recover.yml", "kind": "blocked scaffold"}
+  ]
+}

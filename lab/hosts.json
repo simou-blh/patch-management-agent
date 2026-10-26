@@ -1,0 +1,5 @@
+{
+  "vm-01": {"address": "192.168.56.11", "user": "vagrant", "key": "~/.ssh/patch-lab/vm-01"},
+  "vm-02": {"address": "192.168.56.12", "user": "vagrant", "key": "~/.ssh/patch-lab/vm-02"},
+  "vm-03": {"address": "192.168.56.13", "user": "vagrant", "key": "~/.ssh/patch-lab/vm-03"}
+}

@@ -218,3 +218,16 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Patch agent local state and credentials
+data/
+keys/
+.vagrant/
+.env.*
+!.env.example
+.venv*/
+noyau-local/
+*.box
+*.pem
+*.key
+__temp__/

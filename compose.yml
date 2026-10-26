@@ -1,0 +1,34 @@
+services:
+  semaphore:
+    image: semaphoreui/semaphore@sha256:008dacd9f1adbd92e8a048f1786ae1dd9bed2a352aca2eb30b9837de5706e7f7
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      SEMAPHORE_DB_DIALECT: sqlite
+      SEMAPHORE_DB: /etc/semaphore/semaphore.sqlite
+      SEMAPHORE_ADMIN: admin
+      SEMAPHORE_ADMIN_NAME: Admin
+      SEMAPHORE_ADMIN_EMAIL: admin@localhost
+      SEMAPHORE_ADMIN_PASSWORD: ${SEMAPHORE_ADMIN_PASSWORD:?Set SEMAPHORE_ADMIN_PASSWORD in .env}
+      SEMAPHORE_ACCESS_KEY_ENCRYPTION: ${SEMAPHORE_ACCESS_KEY_ENCRYPTION:?Set encryption key in .env}
+      SEMAPHORE_PLAYBOOK_PATH: /tmp/semaphore
+    volumes:
+      - semaphore_config:/etc/semaphore
+      - semaphore_tmp:/tmp/semaphore
+
+  # Opt in only to test the upstream transport. Never register it in OpenCode.
+  semaphore-mcp:
+    profiles: [upstream]
+    image: ghcr.io/cloin/semaphore-mcp@sha256:feba1b701192aa2e5624294c9d461af5d5b020def7ae698be25d1eeaf1fe6fae
+    ports:
+      - "127.0.0.1:8500:8000"
+    environment:
+      SEMAPHORE_URL: http://semaphore:3000
+      SEMAPHORE_API_TOKEN: ${SEMAPHORE_API_TOKEN:-}
+      MCP_PORT: "8000"
+    depends_on:
+      - semaphore
+
+volumes:
+  semaphore_config:
+  semaphore_tmp:

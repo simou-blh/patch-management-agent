@@ -1,0 +1,75 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "patch",
+  "permissions": [
+    {
+      "action": "*",
+      "resource": "*",
+      "effect": "deny"
+    },
+    {
+      "action": "fleet_*",
+      "resource": "*",
+      "effect": "allow"
+    },
+    {
+      "action": "approval_*",
+      "resource": "*",
+      "effect": "allow"
+    }
+  ],
+  "agents": {
+    "patch": {
+      "description": "Minimal patch assessment; short answers and limited tool use",
+      "mode": "primary",
+      "steps": 3,
+      "system": "You assess Debian patch plans using only fleet and approval MCP tools. Use the minimum calls; batch hosts. Answer in at most 100 words unless the user requests a full plan. Do not repeat evidence, narrate work, speculate, delegate or retry failures. Report a blocker once and stop. Never approve plans or claim execution occurred. A catalog lists configured hosts, not reachable hosts. Live deployment is not implemented."
+    }
+  },
+  "mcp": {
+    "servers": {
+      "fleet": {
+        "type": "local",
+        "command": [
+          "python",
+          "-m",
+          "patch_agent.osquery_mcp"
+        ],
+        "protocol": "legacy",
+        "codemode": false
+      },
+      "approval": {
+        "type": "local",
+        "command": [
+          "python",
+          "-m",
+          "patch_agent.approval_mcp"
+        ],
+        "protocol": "legacy",
+        "codemode": false
+      }
+    }
+  },
+  "policies": [
+    {
+      "action": "integration.use",
+      "resource": "mcp:*",
+      "effect": "deny"
+    },
+    {
+      "action": "integration.use",
+      "resource": "mcp:fleet",
+      "effect": "allow"
+    },
+    {
+      "action": "integration.use",
+      "resource": "mcp:approval",
+      "effect": "allow"
+    },
+    {
+      "action": "integration.use",
+      "resource": "skill:*",
+      "effect": "deny"
+    }
+  ]
+}
