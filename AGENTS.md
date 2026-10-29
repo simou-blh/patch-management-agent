@@ -1,28 +1,40 @@
 # Project instructions
 
-For development, read `mvp.md` and `plan.md`. During patch assessment, use MCP evidence;
-do not load project documentation into every conversation.
-This repository is an MVP foundation, not a working deployment system yet.
+## Development
 
-- Use OpenCode, MCP, osquery, Debian 12, Semaphore and fixed Ansible playbooks.
-- Reuse Kali WSL for this machine's control node. Vagrant/VirtualBox run on Windows.
-- Keep inventory queries fixed and read-only. Never accept arbitrary SQL or shell commands.
-- Only the operator CLI may approve a plan. MCP tools must never grant approval.
-- Keep deployment blocked until hash-bound approval, preflight, canary verification,
-  sequential rollout and recovery have all been implemented and tested together.
-- Never expose upstream Semaphore mutation tools directly to the model.
-- Keep `.env`, SSH keys, advisory caches, plans and reports out of Git and model context.
-- Do not install the superseded LangGraph/OSV/Ubuntu-VM stack or the teacher's core
-  as part of the MVP setup. Preserve `PROJECT_FULL_REFERENCE.md` for later integration.
-- Respect the 2–5 GB mobile-data budget: inspect metadata before large downloads;
-  avoid blanket OS upgrades, image updates and downloading duplicate VM images.
-- Verify changes with `python -m pytest`; live lab checks are separate and must
-  never be reported as passing based only on mocks.
+- Read `mvp.md` for requirements and `plan.md` for the four-sprint roadmap. Follow
+  existing code and consult relevant documentation/tools when useful.
+- Choose the simplest correct implementation. Spend effort identifying realistic
+  failures rather than adding unnecessary abstractions or dependencies.
+- Before editing, check affected callers, schemas, stored data, dependencies and
+  workflows. Preserve unrelated user changes and compatibility deliberately.
+- Clarify materially unclear, contradictory or risky requirements before dependent
+  changes; resolve ordinary implementation choices from the code and requirements.
+- Keep features small enough to understand, test and review. Run relevant tests with
+  `python -m pytest`; report remaining limitations and distinguish mocks from live checks.
+- Never commit, push or merge. The user handles those actions and branch selection.
+- `local.md` is private planning material: keep it excluded locally and never stage,
+  commit, publish or copy its contents into shared documentation or PR descriptions.
 
-## Token discipline
+## Project boundaries
 
-- Answer in at most 100 words unless a full plan/report is requested.
-- Use the minimum tool calls, batch hosts, and reuse collected evidence.
-- No repeated plans, narrated work, delegation, speculative exploration or retry loops.
-- On missing evidence or infrastructure, state the blocker once and stop.
-- The default OpenCode `patch` agent has a three-step limit. It is not a total-token cap.
+- Use OpenCode, MCP, osquery, Debian 12, Semaphore/SQLite and fixed Ansible playbooks.
+  Environment/setup instructions belong in `SETUP.md`; respect its download budget.
+- Inventory queries stay fixed, read-only and restricted to configured hosts.
+- Only the operator CLI grants approval. Bind execution to the exact approved scope;
+  never expose upstream Semaphore mutation tools directly to the model.
+- Keep deployment blocked until approval, preflight, canary verification, sequential
+  rollout, recovery and reporting pass the applicable live sprint gates together.
+- Keep credentials, SSH keys and runtime evidence/plans/reports out of Git and model
+  context. Preserve the teacher's reference for the later platform integration phase.
+
+## Progress and efficient assessment
+
+- `plan.md` owns five acceptance checkpoints per sprint. Check one only after merged
+  work and recorded verification; include an `Evidence:` reference. Do not infer
+  progress from commits, code volume, mocks or individual contribution scores.
+- After a checkpoint change, run `python scripts/update_progress.py`, then its
+  `--check` option. Keep generated README bars consistent in the same proposed change.
+- During patch assessment, use MCP evidence instead of loading project documents.
+  Batch queries, avoid redundant calls and stop on a reported blocker. The `patch`
+  runtime's three-step/short-answer rules do not limit development investigation.

@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Fleet inspection evidence v1",
+  "description": "Collection record, including host failures. Schema validity does not establish trust, freshness or patch eligibility.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "collected_at", "targets", "hosts"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "collected_at": {"$ref": "#/$defs/timestamp"},
+    "targets": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"$ref": "#/$defs/host_name"}
+    },
+    "hosts": {
+      "type": "object", "minProperties": 1,
+      "propertyNames": {"$ref": "#/$defs/host_name"},
+      "additionalProperties": {"$ref": "#/$defs/host"}
+    }
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "version": {"type": "string", "minLength": 1, "not": {"pattern": "\\s"}},
+    "timestamp": {
+      "type": "string", "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$",
+      "not": {"pattern": "\\s"}
+    },
+    "host_name": {
+      "type": "string", "pattern": "^[a-z][a-z0-9-]{0,62}$",
+      "not": {"pattern": "\\s"}
+    },
+    "package_id": {
+      "type": "string", "pattern": "^[a-z0-9][a-z0-9+.-]+:[a-z0-9][a-z0-9-]*$",
+      "not": {"pattern": "\\s"}
+    },
+    "source": {
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["name", "version"],
+          "properties": {
+            "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9+.-]+$", "not": {"pattern": "\\s"}},
+            "version": {"$ref": "#/$defs/version"}
+          }
+        }
+      ]
+    },
+    "origin": {
+      "type": "object", "additionalProperties": false,
+      "required": ["uri", "suite", "component"],
+      "properties": {
+        "uri": {"type": "string", "pattern": "^(https?|file)://", "not": {"pattern": "\\s"}},
+        "suite": {"$ref": "#/$defs/text"},
+        "component": {"$ref": "#/$defs/text"}
+      }
+    },
+    "candidate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "source", "origins"],
+      "properties": {
+        "version": {"$ref": "#/$defs/version"},
+        "source": {"$ref": "#/$defs/source"},
+        "origins": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/origin"}}
+      }
+    },
+    "package": {
+      "type": "object", "additionalProperties": false,
+      "required": ["installed", "source", "candidates"],
+      "properties": {
+        "installed": {"$ref": "#/$defs/version"},
+        "source": {"$ref": "#/$defs/source"},
+        "candidates": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/candidate"}}
+      }
+    },
+    "host": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "collected_at", "packages", "error"],
+      "properties": {
+        "status": {"enum": ["ok", "error"]},
+        "collected_at": {"$ref": "#/$defs/timestamp"},
+        "packages": {
+          "type": "object", "propertyNames": {"$ref": "#/$defs/package_id"},
+          "additionalProperties": {"$ref": "#/$defs/package"}
+        },
+        "error": {
+          "anyOf": [
+            {"type": "null"},
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["code", "message"],
+              "properties": {"code": {"$ref": "#/$defs/text"}, "message": {"$ref": "#/$defs/text"}}
+            }
+          ]
+        }
+      },
+      "if": {"properties": {"status": {"const": "ok"}}},
+      "then": {"properties": {"packages": {"minProperties": 1}, "error": {"type": "null"}}},
+      "else": {"properties": {"packages": {"maxProperties": 0}, "error": {"type": "object"}}}
+    }
+  }
+}
