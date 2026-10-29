@@ -55,3 +55,40 @@ def test_check_does_not_write_and_update_is_repeatable(tmp_path):
 
 def test_repository_progress_is_current():
     assert main(["--check"], root=ROOT) == 0
+
+
+def split_plan(done=1):
+    parent = "- [ ] Checkpoint 0"
+    heading = parent if done < 4 else "- [x] Checkpoint 0 Evidence: all four deliverables verified"
+    children = "\n".join(
+        f"  - [{'x' if step < done else ' '}] Deliverable {step}"
+        + (" Evidence: merged PR and test record" if step < done else "")
+        for step in range(4))
+    return sample_plan().replace(parent, heading + "\n" + children, 1)
+
+
+@pytest.mark.parametrize("done", [0, 1, 2, 3, 4])
+def test_substeps_contribute_five_percent_without_double_counting(done):
+    result = updated_readme(f"{START}\n{END}", split_plan(done))
+    first_sprint = next(line for line in result.splitlines() if line.startswith("Sprint 1"))
+    bar = "█" * done + "░" * (20 - done)
+    assert f"[{bar}] {done * 5:>3}%  {int(done == 4)}/5 full checkpoints" in first_sprint
+    other_sprints = [line for line in result.splitlines()
+                     if line.startswith("Sprint ") and not line.startswith("Sprint 1")]
+    assert len(other_sprints) == 3
+    assert all(line.endswith("]   0%  0/5 full checkpoints") for line in other_sprints)
+
+
+@pytest.mark.parametrize("plan", [
+    split_plan().replace("  - [ ] Deliverable 3\n", "", 1),
+    split_plan().replace("  - [ ] Deliverable 3", "  - [ ] Deliverable 3\n  - [ ] Extra", 1),
+    split_plan().replace("  - [x] Deliverable 0 Evidence: merged PR and test record", "  - [x] Deliverable 0", 1),
+    split_plan().replace("- [ ] Checkpoint 0", "- [x] Checkpoint 0 Evidence: prematurely accepted", 1),
+    split_plan(4).replace("- [x] Checkpoint 0 Evidence: all four deliverables verified", "- [ ] Checkpoint 0", 1),
+    split_plan().replace("  - [ ] Deliverable 3", "    - [ ] Deliverable 3", 1),
+    split_plan().replace("  - [ ] Deliverable 3", "  - [q] Deliverable 3", 1),
+    sample_plan().replace("<!-- sprint:1:start -->", "<!-- sprint:1:start -->\n  - [ ] Orphan", 1),
+])
+def test_invalid_partial_progress_is_rejected(plan):
+    with pytest.raises(ValueError):
+        updated_readme(f"{START}\n{END}", plan)

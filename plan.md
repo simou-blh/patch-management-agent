@@ -116,11 +116,13 @@ or invented values are committed here.
 ## 5. Sprint progress
 
 These four one-week sprints follow the team's sprint schedule. Each has five equally
-weighted acceptance checkpoints (20% each). They measure delivered team outcomes,
+weighted acceptance checkpoints (20% each). A checkpoint may be split into four
+explicit, equally weighted substeps (5% each) to recognize partial delivery without
+guessing percentages. They measure delivered team outcomes,
 not effort, individual grades or number of commits. The existing foundation above is
 the starting point; it does not establish that these sprint outcomes have passed.
 
-Check a box only after the work is merged and its verification is recorded. Append
+Check a checkpoint or substep only after the work is merged and its verification is recorded. Append
 `Evidence: ...` on that checkpoint's line, referencing the merged PR(s) and a test,
 runbook or sanitized live result. Reviewers verify those references: the script
 calculates percentages and requires a nonempty reference; it does not query GitHub
@@ -129,12 +131,20 @@ or prove that a referenced demonstration occurred. Leave unverified work uncheck
 Update the bars with `python scripts/update_progress.py`. Use
 `python scripts/update_progress.py --check` to detect a stale README without editing
 it. Keep five checkpoints per sprint; changes to acceptance scope need team review.
+Indent substeps by two spaces. A split checkpoint must have exactly four substeps;
+check the parent only when all four are checked, adding its evidence reference too.
+The percentage includes accepted substeps; the README's full-checkpoint count does not.
+Splitting an already-completed checkpoint cannot increase its total weight above 20%.
 
 ### Sprint 1 — Lab and trusted evidence
 
 <!-- sprint:1:start -->
 - [ ] S1.1 — Taha: locked dependencies, three reachable Debian 12 VMs, signed osquery installation, ready snapshots and a successful read-only Semaphore job.
 - [ ] S1.2 — Abderaouf + Meftah: agreed versioned inspection/evidence format covering installed/candidate versions, source mapping, repository origins, timestamps and host errors; fixed read-only template mapping.
+  - [x] S1.2a — Versioned evidence schema, standalone contract validator, synthetic examples and contract tests are merged. Evidence: [merged PR #3](https://github.com/simou-blh/patch-management-agent/pull/3); [48 passing contract checks](tests/test_evidence.py), included in the 86-test local suite.
+  - [ ] S1.2b — Abderaouf, Meftah and Baha record producer/consumer agreement and resolve the contract review findings.
+  - [ ] S1.2c — Abderaouf's fixed inspection playbook emits the agreed versioned package/candidate/source/origin/timestamp/error fields, with output validation tests.
+  - [ ] S1.2d — Taha and Abderaouf record the fixed read-only inspection/verification template mapping and demonstrate a successful inspection job using the agreed output.
 - [ ] S1.3 — Meftah: operator-owned collector persists trusted evidence; validation rejects stale, incomplete and failed-host evidence while approval restrictions remain enforced.
 - [ ] S1.4 — Baha: advisory/assessment contracts, Debian version-comparison helpers and tests, and a reproducible vulnerable-package fixture specification.
 - [ ] S1.5 — Dhia + Ahmed + team: passing foundation/collector CI, reviewed setup/runbook and acceptance checklist, and recorded real inventory/candidate evidence for all three hosts. Deployment remains blocked.

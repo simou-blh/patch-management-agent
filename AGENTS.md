@@ -30,8 +30,10 @@
 
 ## Progress and efficient assessment
 
-- `plan.md` owns five acceptance checkpoints per sprint. Check one only after merged
-  work and recorded verification; include an `Evidence:` reference. Do not infer
+- `plan.md` owns five 20% acceptance checkpoints per sprint. Each may be split into
+  exactly four 5% substeps. Check an item only after merged work and recorded
+  verification; include an `Evidence:` reference. Check a split parent exactly when
+  all four children are complete; never count parent and children twice. Do not infer
   progress from commits, code volume, mocks or individual contribution scores.
 - After a checkpoint change, run `python scripts/update_progress.py`, then its
   `--check` option. Keep generated README bars consistent in the same proposed change.

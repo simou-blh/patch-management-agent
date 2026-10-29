@@ -27,27 +27,52 @@ def between(text, start, end):
 
 
 def completion(plan):
-    counts = []
+    progress = []
     for sprint in range(1, 5):
         first, last = between(plan, f"<!-- sprint:{sprint}:start -->",
                               f"<!-- sprint:{sprint}:end -->")
-        rows = re.findall(r"^- \[([ xX])\] (.+)$", plan[first:last], re.MULTILINE)
-        if len(rows) != 5:
+        checkpoints = []
+        for line in plan[first:last].splitlines():
+            if not line.lstrip().startswith("- ["):
+                continue
+            match = re.fullmatch(r"( *)- \[([ xX])\] (.+)", line)
+            if match is None or len(match[1]) not in (0, 2):
+                raise ValueError(f"Sprint {sprint}: invalid checkbox or indentation")
+            item = (match[2].lower(), match[3], [])
+            if not match[1]:
+                checkpoints.append(item)
+            elif checkpoints:
+                checkpoints[-1][2].append(item)
+            else:
+                raise ValueError(f"Sprint {sprint}: substep needs a parent checkpoint")
+        if len(checkpoints) != 5:
             raise ValueError(f"Sprint {sprint} must have exactly five checkpoints")
-        for checked, description in rows:
-            if checked.lower() == "x" and not re.search(r"\bEvidence:\s*\S", description):
-                raise ValueError(f"Sprint {sprint}: checked checkpoint needs an Evidence: reference")
-        counts.append(sum(checked.lower() == "x" for checked, _ in rows))
-    return counts
+        percent = 0
+        for checked, description, children in checkpoints:
+            for state, text, _ in [(checked, description, children), *children]:
+                if state == "x" and not re.search(r"\bEvidence:\s*\S", text):
+                    raise ValueError(f"Sprint {sprint}: checked item needs an Evidence: reference")
+            if children:
+                if len(children) != 4:
+                    raise ValueError(f"Sprint {sprint}: split checkpoints need exactly four substeps")
+                done = sum(state == "x" for state, _, _ in children)
+                if (checked == "x") != (done == 4):
+                    raise ValueError(f"Sprint {sprint}: check the parent exactly when all four substeps are complete")
+                percent += done * 5
+            elif checked == "x":
+                percent += 20
+        progress.append((percent, sum(state == "x" for state, _, _ in checkpoints)))
+    return progress
 
 
 def updated_readme(readme, plan):
-    counts = completion(plan)
+    progress = completion(plan)
     lines = ["**Sprint progress**", "", "```text"]
-    for sprint, (label, done) in enumerate(zip(LABELS, counts), 1):
-        bar = "█" * (done * 4) + "░" * (20 - done * 4)
-        lines.append(f"Sprint {sprint}  {label:<23} [{bar}] {done * 20:>3}%  {done}/5")
-    lines += ["```", "", "Verified team checkpoints · [Criteria and evidence](plan.md#5-sprint-progress)."]
+    for sprint, (label, (percent, done)) in enumerate(zip(LABELS, progress), 1):
+        filled = percent // 5
+        bar = "█" * filled + "░" * (20 - filled)
+        lines.append(f"Sprint {sprint}  {label:<23} [{bar}] {percent:>3}%  {done}/5 full checkpoints")
+    lines += ["```", "", "Verified checkpoints and substeps · [Criteria and evidence](plan.md#5-sprint-progress)."]
     first, last = between(readme, START, END)
     return readme[:first] + "\n" + "\n".join(lines) + "\n" + readme[last:]
 

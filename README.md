@@ -6,13 +6,13 @@ AI-assisted patch management for Debian fleets: inventory, security update prior
 **Sprint progress**
 
 ```text
-Sprint 1  Lab & trusted evidence  [░░░░░░░░░░░░░░░░░░░░]   0%  0/5
-Sprint 2  Assessment & readiness  [░░░░░░░░░░░░░░░░░░░░]   0%  0/5
-Sprint 3  Canary & recovery       [░░░░░░░░░░░░░░░░░░░░]   0%  0/5
-Sprint 4  Fleet & delivery        [░░░░░░░░░░░░░░░░░░░░]   0%  0/5
+Sprint 1  Lab & trusted evidence  [█░░░░░░░░░░░░░░░░░░░]   5%  0/5 full checkpoints
+Sprint 2  Assessment & readiness  [░░░░░░░░░░░░░░░░░░░░]   0%  0/5 full checkpoints
+Sprint 3  Canary & recovery       [░░░░░░░░░░░░░░░░░░░░]   0%  0/5 full checkpoints
+Sprint 4  Fleet & delivery        [░░░░░░░░░░░░░░░░░░░░]   0%  0/5 full checkpoints
 ```
 
-Verified team checkpoints · [Criteria and evidence](plan.md#5-sprint-progress).
+Verified checkpoints and substeps · [Criteria and evidence](plan.md#5-sprint-progress).
 <!-- sprint-progress:end -->
 
 ESTIN Conduite de projet, 2026–2027. Supervisors: Pr. SEBAA Abderrazak and Dr. MANSOUR Abdelaziz.
