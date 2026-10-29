@@ -112,3 +112,60 @@ Do not claim contract compliance until tested against the actual teacher-provide
 Its PostgreSQL requirement belongs to that integration environment, not this MVP setup.
 Team identity/contact and provider choice remain operator/team configuration; no secrets
 or invented values are committed here.
+
+## 5. Sprint progress
+
+These four one-week sprints follow the team's sprint schedule. Each has five equally
+weighted acceptance checkpoints (20% each). They measure delivered team outcomes,
+not effort, individual grades or number of commits. The existing foundation above is
+the starting point; it does not establish that these sprint outcomes have passed.
+
+Check a box only after the work is merged and its verification is recorded. Append
+`Evidence: ...` on that checkpoint's line, referencing the merged PR(s) and a test,
+runbook or sanitized live result. Reviewers verify those references: the script
+calculates percentages and requires a nonempty reference; it does not query GitHub
+or prove that a referenced demonstration occurred. Leave unverified work unchecked.
+
+Update the bars with `python scripts/update_progress.py`. Use
+`python scripts/update_progress.py --check` to detect a stale README without editing
+it. Keep five checkpoints per sprint; changes to acceptance scope need team review.
+
+### Sprint 1 — Lab and trusted evidence
+
+<!-- sprint:1:start -->
+- [ ] S1.1 — Taha: locked dependencies, three reachable Debian 12 VMs, signed osquery installation, ready snapshots and a successful read-only Semaphore job.
+- [ ] S1.2 — Abderaouf + Meftah: agreed versioned inspection/evidence format covering installed/candidate versions, source mapping, repository origins, timestamps and host errors; fixed read-only template mapping.
+- [ ] S1.3 — Meftah: operator-owned collector persists trusted evidence; validation rejects stale, incomplete and failed-host evidence while approval restrictions remain enforced.
+- [ ] S1.4 — Baha: advisory/assessment contracts, Debian version-comparison helpers and tests, and a reproducible vulnerable-package fixture specification.
+- [ ] S1.5 — Dhia + Ahmed + team: passing foundation/collector CI, reviewed setup/runbook and acceptance checklist, and recorded real inventory/candidate evidence for all three hosts. Deployment remains blocked.
+<!-- sprint:1:end -->
+
+### Sprint 2 — Security assessment and execution preparation
+
+<!-- sprint:2:start -->
+- [ ] S2.1 — Taha: repeatable vulnerable lab, obtainable fixed/previous package artifacts, validated template IDs/connectivity and compatible Semaphore Ansible runtime.
+- [ ] S2.2 — Baha: timestamped advisory cache and source/version matching yield affected/fixed/uncertain decisions and installable fixes or explicit deferrals.
+- [ ] S2.3 — Meftah: advisory/candidate validation and APT simulation reject dependency expansion, removals and unsupported actions; verification/recovery policies and executor/report contracts are fixed.
+- [ ] S2.4 — Abderaouf: preflight checks privileges, disk, APT health/locks, drift and candidate availability; previous package artifacts, configuration backups and service policies are verified.
+- [ ] S2.5 — Dhia + Ahmed + team: negative/integration tests pass; a documented real assessment produces an evidence-backed plan, and failed readiness/evidence blocks execution. Deployment remains blocked.
+<!-- sprint:2:end -->
+
+### Sprint 3 — Approved canary, recovery and reports
+
+<!-- sprint:3:start -->
+- [ ] S3.1 — Meftah + Taha: stored run ID/hash drives the Semaphore facade; approval binds plan/templates/recovery scope, is rechecked before mutation, and duplicate runs are blocked with durable task IDs/log references.
+- [ ] S3.2 — Abderaouf: fixed canary patch/verify playbooks enforce exact approved changes and configured restarts, then compare observed package versions and service health.
+- [ ] S3.3 — Abderaouf + Meftah: approved diagnostics, bounded APT repair and previous-package/config restoration return verified recovery results or explicit manual-intervention outcomes.
+- [ ] S3.4 — Baha + Meftah: canary preflight/patch/wait/verify orchestration handles failures, timeouts and unknown task states; every terminal outcome has a persisted schema-valid report, and fleet execution stays blocked.
+- [ ] S3.5 — Dhia + Ahmed + Taha + team: safety tests and sanitized runbooks pass review; real successful/failed canary and recovery scenarios demonstrate the combined controls before enabling canary execution.
+<!-- sprint:3:end -->
+
+### Sprint 4 — Sequential fleet rollout and delivery
+
+<!-- sprint:4:start -->
+- [ ] S4.1 — Baha + Abderaouf: verified canary is followed by vm-02 then vm-03, each with preflight/patch/wait/verify; first failure stops later hosts and recovery targets only the affected host.
+- [ ] S4.2 — Meftah: durable per-host pending/running/succeeded/failed/skipped states preserve task IDs across interruption, enforce approved scope at every transition and block blind reruns with unknown mutation outcomes.
+- [ ] S4.3 — Meftah + Ahmed: consistent final reports include observed versions/health, recovery, skipped hosts, partial success and unresolved failures, and agree with Semaphore logs.
+- [ ] S4.4 — Dhia + Taha + Abderaouf + team: real success, rejection/changed approval, preflight/canary/fleet/recovery failures and interrupted/duplicate-run checks pass; versions prove later hosts remain untouched after failure.
+- [ ] S4.5 — Ahmed + team: final CI/regressions pass, setup/reset/demo instructions are verified, reviewed PRs are merged, the three-host demonstration passes, and its tested release is tagged by the team.
+<!-- sprint:4:end -->
