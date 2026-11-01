@@ -18,9 +18,11 @@ may differ from the original Debian-box estimate. Resolve its final artifact siz
 before downloading; do not promise the whole setup fits if metadata is unavailable.
 Disk space is separate: reserve approximately **15–25 GB**, growing with snapshots.
 
-Already installed according to local checks: Docker Desktop CLI, OpenCode on Windows,
-Kali WSL2, VirtualBox executable at its usual installation path, Python on Windows.
-Vagrant and uv were not on the Windows PATH. Check the WSL tools independently.
+Local checks on 2026-10-26, on the machine used for the original checks, found: Docker
+Desktop CLI, OpenCode on Windows, Kali WSL2, VirtualBox at its usual installation path
+and Python on Windows. Vagrant and uv were not on that machine's Windows PATH. Other
+machines differ: run the checks in SETUP.md section 1 before downloading anything, and
+check the WSL tools independently.
 
 Savings: reuse Kali, download one base box, avoid a desktop environment, avoid a full
 Kali upgrade on mobile data, skip a separate managed Python when system Python is
