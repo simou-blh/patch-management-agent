@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "collected_at": "2026-10-30T09:00:02Z",
+  "targets": ["vm-01"],
+  "hosts": {
+    "vm-01": {
+      "status": "ok",
+      "collected_at": "2026-10-30T09:00:00Z",
+      "packages": {
+        "demo-package:amd64": {"source": null, "candidates": []}
+      },
+      "error": null
+    }
+  }
+}

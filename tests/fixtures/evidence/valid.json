@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "collected_at": "2026-10-30T09:00:02Z",
+  "targets": ["vm-01"],
+  "hosts": {
+    "vm-01": {
+      "status": "ok",
+      "collected_at": "2026-10-30T09:00:00Z",
+      "packages": {
+        "demo-package:amd64": {
+          "installed": "1:1.0-1",
+          "source": {"name": "demo-source", "version": "1:1.0-1"},
+          "candidates": [
+            {
+              "version": "1:1.0-2",
+              "source": {"name": "demo-source", "version": "1:1.0-2"},
+              "origins": [
+                {"uri": "https://repo.example.invalid/debian", "suite": "bookworm", "component": "main"}
+              ]
+            }
+          ]
+        }
+      },
+      "error": null
+    }
+  }
+}

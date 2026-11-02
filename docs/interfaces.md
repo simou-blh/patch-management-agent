@@ -15,6 +15,10 @@ before live execution is enabled.
 
 ## Plan and approval MCP
 
+The proposed [versioned evidence contract](evidence-contract.md) is available for
+inspection/assessment integration work. Its validator currently stands alone; the
+MCP facade below still uses the existing manual evidence shape shown in this section.
+
 - `submit_plan(plan)` validates `schemas/plan.schema.json` plus candidate evidence,
   then stores the proposal in the local SQLite store.
 - `approval_status(run_id)` returns the exact plan, canonical SHA-256, decision and time.
