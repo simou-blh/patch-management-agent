@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Debian advisory cache v1",
+  "description": "Cached Debian security data for one release, keyed by source package. Schema validity does not establish freshness, authenticity or that any package is affected.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "fetched_at", "source", "release", "packages"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "fetched_at": {"$ref": "#/$defs/timestamp"},
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "uri"],
+      "properties": {
+        "name": {"$ref": "#/$defs/text"},
+        "uri": {"type": "string", "pattern": "^https?://", "not": {"pattern": "\\s"}}
+      }
+    },
+    "release": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+    "packages": {
+      "type": "object", "minProperties": 1,
+      "propertyNames": {"$ref": "#/$defs/source_name"},
+      "additionalProperties": {
+        "type": "array", "minItems": 1,
+        "items": {"$ref": "#/$defs/advisory"}
+      }
+    }
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "version": {"type": "string", "minLength": 1, "not": {"pattern": "\\s"}},
+    "timestamp": {
+      "type": "string", "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$",
+      "not": {"pattern": "\\s"}
+    },
+    "source_name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9+.-]+$"},
+    "advisory": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "status", "fixed_version", "urgency"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"},
+        "status": {"enum": ["resolved", "open", "undetermined"]},
+        "fixed_version": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/version"}]},
+        "urgency": {"enum": ["unimportant", "low", "medium", "high", "not yet assigned", "end-of-life"]}
+      },
+      "if": {"properties": {"status": {"const": "resolved"}}},
+      "then": {"properties": {"fixed_version": {"type": "string"}}},
+      "else": {"properties": {"fixed_version": {"type": "null"}}}
+    }
+  }
+}
