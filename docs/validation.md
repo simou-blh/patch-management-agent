@@ -44,3 +44,14 @@ Docker service startup, three real VMs, SSH/osquery against those machines, actu
 APT/security evidence, canary patching, sequential rollout, and recovery. The lab
 configuration is committed source for the team; provisioning and live environment
 checks remain necessary before the first patching demonstration. See SETUP.md.
+
+## Update 2026-10-31
+
+Re-checked on Windows (Python 3.13.13 selected by uv, without WSL, Vagrant or Docker):
+
+- `uv run python -m pytest -q`: **99 passed**. The suite has grown since the 27-test
+  result above, which is kept as the 2026-10-26 record.
+- `uv run python scripts/demo.py`: all gates passed, 4 schema-validated JSON reports.
+- `uv run python scripts/update_progress.py --check`: README sprint bars are current.
+
+The "Still unverified" list above is unchanged. See [runbook.md](runbook.md).
