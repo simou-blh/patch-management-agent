@@ -218,10 +218,34 @@ The project config denies built-in tools and allows only `fleet_*` and `approval
 MCP tools for assessment. Do development and human approval in a separate terminal.
 Read [interfaces.md](docs/interfaces.md) for the local prototype's trust boundary.
 
-Candidate evidence collection is unfinished. Until the team implements it, an operator
-must create `data/evidence.json` from real trusted inspection results before the
-model can submit a plan. Show/approve/reject it with `patch_agent.operator`; deployment
-requests stay blocked even after approval. No code currently starts a Semaphore job.
+Before plan submission, agree a maximum observation age with the team. Set
+`PATCH_AGENT_EVIDENCE_MAX_AGE_SECONDS` to that positive integer number of seconds in
+the shell that starts the importer and OpenCode/MCP. Python does not load `.env`
+automatically; copying a value there alone does not configure these processes.
+PowerShell uses `$env:PATCH_AGENT_EVIDENCE_MAX_AGE_SECONDS = 'SECONDS'`; WSL uses
+`export PATCH_AGENT_EVIDENCE_MAX_AGE_SECONDS=SECONDS`. Replace `SECONDS` with your
+agreed number; it is deliberately not a default. Restart already-running MCP servers
+after setting it.
+
+The operator then imports a trusted contract-v1 export from the fixed inspection:
+
+```bash
+python -m patch_agent.collector /path/to/inspection-export.json --targets vm-01 vm-02 vm-03
+```
+
+The importer validates complete, successful, fresh host results and atomically
+publishes `data/evidence.json`; each plan submission checks them again. Export and
+plan targets must match exactly, and package names include architecture (`curl:amd64`).
+Legacy/manual evidence maps are rejected. Archive an existing legacy/invalid evidence
+file outside Git before the first import; never invent timestamps to convert it.
+If an import process crashes, check that it has stopped before removing its stale
+`data/evidence.lock` and `.evidence-*.tmp` files. Do not remove an active import's lock.
+
+Live production of the v1 export and trusted Semaphore transport remain pending;
+the current `inspect.yml` output cannot be imported as-is. Use `python scripts/demo.py`
+to exercise the importer, MCP and operator CLI with isolated synthetic data instead.
+Show/approve/reject plans with `patch_agent.operator`; deployment requests stay blocked
+even after approval. No code currently starts a Semaphore job.
 
 ## Environment-ready gates (live, still to validate)
 

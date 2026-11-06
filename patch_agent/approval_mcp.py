@@ -24,7 +24,7 @@ def submit_plan(plan: dict[str, Any]) -> dict[str, Any]:
     try:
         return local_store().submit(plan, evidence)
     except ValidationError as exc:
-        raise ToolError("plan does not match schemas/plan.schema.json") from exc
+        raise ToolError("plan or operator evidence does not match its schema; see docs/interfaces.md") from exc
     except ValueError as exc:
         raise ToolError(str(exc)) from exc
 

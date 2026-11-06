@@ -164,6 +164,6 @@ def test_multiarch_identity_and_unknown_source_are_explicit(collection):
         validate_evidence_contract(collection)
 
 
-def test_new_envelope_does_not_silently_replace_legacy_approval_evidence(collection, plan):
-    with pytest.raises(ValueError, match="unknown target"):
+def test_approval_requires_evidence_for_exact_requested_targets(collection, plan):
+    with pytest.raises(ValueError, match="requested targets exactly"):
         validate_plan(plan, collection)

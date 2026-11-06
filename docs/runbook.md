@@ -198,8 +198,8 @@ scenario table in [plan.md](../plan.md). None runs against a real lab yet.
 | 1 | The real lab has not been brought up: VMs, SSH from WSL, Docker-to-host-only routing, Semaphore. | Taha | Everything tagged `PENDING-LIVE` depends on it. See the live gates in [SETUP.md](../SETUP.md). |
 | 2 | Bootstrap with pinned SHA-256 is merged in [PR #8](https://github.com/simou-blh/patch-management-agent/pull/8); signed-package verification and real VM installation remain unverified. | Taha | Operator command: see [SETUP.md section 4](../SETUP.md#4-ssh-and-osquery). Required before accepting S1.1. |
 | 3 | Transitive Python dependencies are not locked in Git; `uv.lock` is generated locally and untracked. | Taha | Review and commit once; others pull it. |
-| 4 | Candidate evidence is manual (`data/evidence.json`); `inspect.yml` does not emit contract v1 yet. | Abderaouf, Wassim | S1.2c and S1.3. |
-| 5 | Evidence contract v1 is not consumed by `submit_plan` or any collector. | Wassim | Freshness/completeness rules still to be agreed (S1.2b). |
+| 4 | The operator importer accepts contract-v1 exports, but `inspect.yml` does not emit them and trusted Semaphore transport is unverified. | Abderaouf, Wassim, Taha | S1.2c and the live S1.3 handoff remain pending; do not fabricate exports. |
+| 5 | Import/submission enforce freshness and complete successful host results; the operator age limit and producer/consumer agreement still need team confirmation. | Wassim | Explicit policy is required (S1.2b); see [SETUP.md](../SETUP.md) for configuration and legacy-file handling. |
 | 6 | `semaphore/templates.json` is a design list; no Semaphore project, credentials or template IDs exist. | Taha, Abderaouf | S1.2d. |
 | 7 | Debian version helpers are merged in [PR #6](https://github.com/simou-blh/patch-management-agent/pull/6); advisory/assessment contracts and matching remain pending. | Baha | S1.4a records helper verification; remaining contracts/fixtures belong to Sprint 1, matching to Sprint 2. |
 | 8 | Box availability: the pinned Bento version must still be downloadable when the lab is built, and its real size is unmeasured. | Taha | Check before downloading; see [download-budget.md](download-budget.md). |
@@ -220,7 +220,7 @@ deployment remains blocked.
 |---|---|---|---|
 | S1.1 | Locked dependencies, three reachable VMs, signed osquery, snapshots, read-only Semaphore job | Not applicable | None yet |
 | S1.2 | Agreed evidence format; fixed inspection emits it; template mapping and a successful inspection job | Contract v1 validator, fixtures and tests merged (S1.2a) | None yet |
-| S1.3 | Operator-owned collector; stale, incomplete and failed-host evidence rejected | None yet | None yet |
+| S1.3 | Operator-owned collector; stale, incomplete and failed-host evidence rejected | Import/publication and approval readiness checks have synthetic coverage; live producer/transport integration remains pending | None yet |
 | S1.4 | Advisory/assessment contracts, Debian version helpers with tests, vulnerable-package fixture spec | Version helpers and tests merged in PR #6 (S1.4a); contracts and vulnerable-package fixture remain pending | None yet |
 | S1.5 | Passing CI, reviewed runbook and acceptance checklist, real inventory/candidate evidence for all three hosts | Runbook and dated validation/setup corrections merged in PRs #4/#5 (S1.5a). Recorded 2026-10-31: 99 local tests, synthetic demo and progress check passed. CI and interface confirmation remain pending. | None yet |
 
