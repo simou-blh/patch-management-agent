@@ -55,3 +55,61 @@ Re-checked on Windows (Python 3.13.13 selected by uv, without WSL, Vagrant or Do
 - `uv run python scripts/update_progress.py --check`: README sprint bars are current.
 
 The "Still unverified" list above is unchanged. See [runbook.md](runbook.md).
+
+## Update 2026-11-06 — Sprint 1 CI, approval tests and live checklist
+
+Sprint 1 work by Dhia Eddine LAGHROUR on branch `dhya/sprint1-ci-and-tests`.
+Deployment remains blocked; no `plan.md` checkpoint is checked by this change.
+
+### Mocked / synthetic / local results
+
+Environment: Arch Linux, Python 3.14.9, isolated `.venv` with the pinned dependencies
+(`mcp==2.3.0`, `jsonschema==4.26.0`, `pytest==9.1.1`, `PyYAML==6.0.3`).
+
+| Check | Command | Result | Tag |
+|---|---|---|---|
+| Test suite (in-process/subprocess MCP, synthetic demo) | `python -m pytest -q` | **142 passed, 400 skipped** | `VERIFIED-LOCAL` |
+| JSON/YAML artifact checks | `python scripts/check_artifacts.py` | "All JSON/YAML artifacts passed." | `VERIFIED-LOCAL` |
+| Sprint progress bars | `python scripts/update_progress.py --check` | "README sprint bars are current." | `VERIFIED-LOCAL` |
+| Whitespace errors | `git diff --check` | clean | `VERIFIED-LOCAL` |
+
+The 400 skips are the `dpkg --compare-versions` cross-checks in
+`tests/test_debversion_dpkg.py`; `dpkg` is unavailable on this Arch machine. The Ubuntu
+CI runner executes them (see CI results below).
+
+### CI results
+
+| Check | Result | Tag |
+|---|---|---|
+| `.github/workflows/ci.yml` (pytest, artifact checks, progress check) | Success for commit `f9a76b8` — [run 42249355848](https://github.com/simou-blh/patch-management-agent/actions/runs/42249355848) | `VERIFIED-CI` |
+
+`VERIFIED-CI` means the workflow ran on GitHub for commit `f9a76b8` and the linked
+run concluded successfully. This documentation-only follow-up does not change any
+checked artifact.
+
+### Live results
+
+| Check | Command | Result | Tag |
+|---|---|---|---|
+| SSH login to vm-01..vm-03 | `python scripts/check_env.py --live` | Not run; lab not up | `PENDING-LIVE` |
+| osquery Debian 12 on all hosts | `python scripts/check_env.py --live` | Not run | `PENDING-LIVE` |
+| Semaphore ping/auth | `SEMAPHORE_URL=... python scripts/check_env.py --live` | Not run | `PENDING-LIVE` |
+| Read-only inspection job | Semaphore UI + agreed template IDs | Not configured (S1.2d) | `PENDING-LIVE` |
+
+Semaphore auth is skipped, not failed, when `SEMAPHORE_API_TOKEN` is unset. The token
+stays in the operator environment; it is never printed, stored in the repository or
+passed as a tool argument.
+
+### Freshness blocker
+
+Freshness and completeness rejection is not implemented or tested: the v1 contract
+validates structure only and deliberately accepts old collections and failed hosts as
+diagnostics. Max-age/completeness rules and the operator-owned collector belong to
+S1.2b/S1.3; until they are merged, no collected data can authorize a patch plan and
+deployment stays blocked. `tests/test_collector_contract.py` only proves that a
+partial-host collection is valid diagnostics but cannot be used as approval evidence.
+
+### Progress
+
+No checkpoint changed. S1.2a remains the only checked Sprint 1 item; this section records
+verification only and does not modify `plan.md` or the README progress bars.

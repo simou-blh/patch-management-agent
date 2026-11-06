@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Tests and artifact checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install pinned dependencies
+        run: |
+          python -m pip install --disable-pip-version-check --no-input \
+            "mcp==2.3.0" "jsonschema==4.26.0" \
+            "pytest==9.1.1" "PyYAML==6.0.3"
+      - name: Record resolved dependency versions
+        run: python -m pip freeze
+      - name: Check JSON and YAML artifacts
+        run: python scripts/check_artifacts.py
+      - name: Check sprint progress bars
+        run: python scripts/update_progress.py --check
+      - name: Run tests
+        run: python -m pytest -q
