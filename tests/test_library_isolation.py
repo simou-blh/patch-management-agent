@@ -89,8 +89,6 @@ def test_module_policy_guard_rejects_unsafe_policy(name):
 @pytest.mark.parametrize("playbook, module", [
     ("patch.yml", "patch_packages"),
     ("verify.yml", "verify_packages"),
-    ("rollout.yml", "patch_packages"),
-    ("rollout.yml", "verify_packages"),
 ])
 def test_playbooks_pass_controller_policy_to_modules(playbook, module):
     play = yaml.safe_load((ROOT / "playbooks" / playbook).read_text(encoding="utf-8"))[0]

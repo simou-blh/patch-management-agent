@@ -130,18 +130,12 @@ cannot be reached while the foundation keeps deployment blocked.
 
 ## Sequential fleet rollout
 
-`playbooks/rollout.yml` implements Abderaouf's Sprint 4 sequential rollout:
-canary (vm-01) first, then vm-02 and vm-03 one at a time (`serial: 1`). For each
-host it runs preflight → patch → verify in sequence. When any step fails on a
-host, recovery runs on that host only (`recover_packages`), and a fail gate
-stops the rollout before the next host. Later fleet hosts are never touched
-after a failure.
-
-The coordinator module `playbooks/library/sequential_rollout.py` decides per
-host whether to `proceed` or `recover`, validated against
-`schemas/rollout.schema.json` by `patch_agent/rollout.py`. Deployment stays
-blocked (`deployment_unblocked` defaults to `false`) until every live Sprint 3/4
-gate has passed.
+The sequential rollout coordinator (canary vm-01, then vm-02 and vm-03 one at a
+time, stop at the first failure, recover only the affected host) belongs to
+Baha's orchestration code, not to an extra playbook: Semaphore keeps exactly the
+five fixed templates. The coordinator drives `preflight.yml`, `patch.yml`,
+`verify.yml` and `recover.yml` per host; `patch.yml` and `recover.yml` keep
+`serial: 1` and `any_errors_fatal: true`.
 
 ## Trust boundary
 

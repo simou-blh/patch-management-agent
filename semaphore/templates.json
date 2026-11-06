@@ -5,7 +5,6 @@
     {"name": "preflight", "playbook": "playbooks/preflight.yml", "kind": "read-only readiness; mutation blocked"},
     {"name": "patch", "playbook": "playbooks/patch.yml", "kind": "simulate-only exact-version patch; deployment blocked"},
     {"name": "verify", "playbook": "playbooks/verify.yml", "kind": "read-only observed-version verification"},
-    {"name": "recover", "playbook": "playbooks/recover.yml", "kind": "simulate-only recovery; deployment blocked"},
-    {"name": "rollout", "playbook": "playbooks/rollout.yml", "kind": "simulate-only sequential rollout; deployment blocked"}
+    {"name": "recover", "playbook": "playbooks/recover.yml", "kind": "simulate-only recovery; deployment blocked"}
   ]
 }
