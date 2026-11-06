@@ -15,9 +15,8 @@ before live execution is enabled.
 
 ## Plan and approval MCP
 
-The proposed [versioned evidence contract](evidence-contract.md) is available for
-inspection/assessment integration work. Its validator currently stands alone; the
-MCP facade below still uses the existing manual evidence shape shown in this section.
+Plan submission requires the [versioned evidence contract](evidence-contract.md).
+Legacy host/package maps are rejected; timestamps or architectures are never guessed.
 
 - `submit_plan(plan)` validates `schemas/plan.schema.json` plus candidate evidence,
   then stores the proposal in the local SQLite store.
@@ -34,32 +33,36 @@ uv run --no-sync python -m patch_agent.operator approve RUN_ID --hash REVIEWED_S
 uv run --no-sync python -m patch_agent.operator reject RUN_ID --hash REVIEWED_SHA256
 ```
 
-The operator alone creates `data/evidence.json` from trusted inspection results:
+The operator alone imports a trusted contract-v1 inspection export with
+`python -m patch_agent.collector EXPORT.json --targets vm-01 vm-02 vm-03`.
+The command validates before atomically publishing `data/evidence.json`; it does
+not query hosts, start Semaphore tasks, parse raw job logs or authenticate the export's
+origin. The producer must supply actual observations, candidate/source/origin fields
+and original UTC timestamps. Synthetic/model-authored records are not live evidence.
+The current inspection playbook does not yet produce this export.
 
-```json
-{
-  "vm-01": {
-    "packages": {
-      "PACKAGE_NAME": {
-        "installed": "OBSERVED_DEBIAN_VERSION",
-        "candidates": ["EXACT_AVAILABLE_REPOSITORY_VERSION"]
-      }
-    }
-  }
-}
-```
+Import and every plan submission require `PATCH_AGENT_EVIDENCE_MAX_AGE_SECONDS`
+in the process environment, set by the operator to a positive integer. There is no
+default or model-controlled age limit. Both collection and host timestamps must be
+within that lifetime and not in the future. Every requested host must be configured,
+present and successful; evidence and plan target sets must match exactly.
+
+Use architecture-qualified plan package names (`curl:amd64`), matching the evidence
+keys. A candidate for another binary/architecture cannot authorize a package update.
+Sources, origins and timestamps remain in storage; no lossy legacy conversion occurs.
 
 For isolated development/demo sessions, an operator may set `PATCH_AGENT_DATA_DIR`
 in the MCP process and CLI environment to use a different state/evidence directory.
 It is not accepted as a tool argument. `python scripts/demo.py` uses this mechanism
 to keep its synthetic data separate from real operator data.
 
-This file is a development interface, not an automated collector. `inspect.yml`
-does not generate it yet. Never use the synthetic test versions as live evidence.
 Submission rejects unknown hosts/packages, mismatched installed versions, unavailable
 patch versions, duplicate package decisions, unsupported actions and kernel patches.
 It does not yet validate CVEs, Debian version ordering, dependency changes, repository
-freshness, service checks or recovery artifacts. Approval therefore cannot enable execution.
+index freshness, service checks or recovery artifacts. Host success does not prove
+that the producer collected every installed package. Approval therefore cannot enable
+execution. Status/approval records are historical decisions, not a freshness guarantee;
+the future executor must revalidate evidence and scope before any mutation.
 
 ## Trust boundary
 

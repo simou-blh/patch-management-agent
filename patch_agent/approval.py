@@ -9,7 +9,7 @@ from pathlib import Path
 import sqlite3
 
 from jsonschema import Draft202012Validator
-from patch_agent.osquery import load_hosts
+from patch_agent.evidence import evidence_max_age, validate_evidence_readiness
 
 ROOT = Path(__file__).resolve().parent.parent
 PLAN_VALIDATOR = Draft202012Validator(json.loads((ROOT / "schemas/plan.schema.json").read_text()))
@@ -29,23 +29,24 @@ def plan_hash(plan):
 
 def validate_plan(plan, evidence):
     PLAN_VALIDATOR.validate(plan)
+    validate_evidence_readiness(evidence, targets=plan["targets"], max_age=evidence_max_age())
     targets = set(plan["targets"])
-    if not targets <= load_hosts().keys() or not targets <= evidence.keys() or plan["canary"] not in targets:
-        raise ValueError("unknown target or canary outside selected targets")
+    if plan["canary"] not in targets:
+        raise ValueError("canary outside selected targets")
     seen = set()
     for package in plan["packages"]:
         host, name = package["host"], package["name"]
         if host not in targets or (host, name) in seen:
             raise ValueError("package host outside scope or duplicate package")
         seen.add((host, name))
-        known = evidence[host]["packages"].get(name)
+        known = evidence["hosts"][host]["packages"].get(name)
         if known is None or known["installed"] != package["current_version"]:
             raise ValueError("unknown package or installed-version evidence mismatch")
         version = package["proposed_version"]
         if package["action"] == "patch":
             if name.startswith(("linux-", "kernel")):
                 raise ValueError("kernel changes are deferred in the MVP")
-            if version is None or version not in known["candidates"]:
+            if version is None or version not in {candidate["version"] for candidate in known["candidates"]}:
                 raise ValueError("proposed version is unavailable in collected candidates")
         elif version is not None:
             raise ValueError("deferred packages must have a null proposed version")
