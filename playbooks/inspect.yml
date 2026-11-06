@@ -20,5 +20,4 @@
           packages: "{{ ansible_facts.packages }}"
           repository_policy: "{{ repository_policy.stdout }}"
 
-    # TODO: fixed candidate/source-package collector, structured artifacts and freshness.
-    # This playbook alone does not produce trusted data/evidence.json yet.
+
