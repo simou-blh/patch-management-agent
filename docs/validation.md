@@ -74,17 +74,18 @@ Environment: Arch Linux, Python 3.14.9, isolated `.venv` with the pinned depende
 | Whitespace errors | `git diff --check` | clean | `VERIFIED-LOCAL` |
 
 The 400 skips are the `dpkg --compare-versions` cross-checks in
-`tests/test_debversion_dpkg.py`; `dpkg` is unavailable on this Arch machine. The CI
-runner (Ubuntu) is expected to execute them, but no CI result has been observed yet.
+`tests/test_debversion_dpkg.py`; `dpkg` is unavailable on this Arch machine. The Ubuntu
+CI runner executes them (see CI results below).
 
 ### CI results
 
 | Check | Result | Tag |
 |---|---|---|
-| `.github/workflows/ci.yml` (pytest, artifact checks, progress check) | Workflow committed; not yet executed on GitHub | `PENDING-CI` |
+| `.github/workflows/ci.yml` (pytest, artifact checks, progress check) | Success for commit `f9a76b8` — [run 42249355848](https://github.com/simou-blh/patch-management-agent/actions/runs/42249355848) | `VERIFIED-CI` |
 
-`PENDING-CI` means the workflow exists but its first GitHub run has not been recorded.
-It must not be reported as passing until a green run is linked.
+`VERIFIED-CI` means the workflow ran on GitHub for commit `f9a76b8` and the linked
+run concluded successfully. This documentation-only follow-up does not change any
+checked artifact.
 
 ### Live results
 
