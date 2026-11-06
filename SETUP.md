@@ -114,9 +114,18 @@ Keep strict host-key checking enabled. If WSL cannot reach VirtualBox's host-onl
 subnet, fix routing/firewall connectivity before proceeding; do not turn off SSH
 verification. The default lab user has passwordless sudo for `sudo -n osqueryi`.
 
-The infrastructure owner must implement the osquery bootstrap playbook using the
-[official signed packages](https://osquery.io/downloads/official), then install it
-on the VMs. Bootstrap is not implemented in this foundation. Once installed:
+From the WSL repo root, install osquery with the operator-run setup playbook:
+
+```bash
+ansible-playbook setup/osquery_bootstrap.yml
+```
+
+It downloads the pinned release once on the control node, verifies its SHA-256,
+then copies and installs it on the VMs. Setup playbooks stay outside `playbooks/`,
+which contains only the five fixed runtime playbooks; bootstrap is not a Semaphore
+runtime template. SHA-256 checking does not verify a package signature: the
+[signed-package requirement](https://osquery.io/downloads/official) and real VM
+installation checks remain pending. Once installed:
 
 ```bash
 ansible all -b -m command -a 'osqueryi --json "select * from os_version"'
