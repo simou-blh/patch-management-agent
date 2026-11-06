@@ -147,7 +147,15 @@ Splitting an already-completed checkpoint cannot increase its total weight above
   - [ ] S1.2d — Taha and Abderaouf record the fixed read-only inspection/verification template mapping and demonstrate a successful inspection job using the agreed output.
 - [ ] S1.3 — Meftah: operator-owned collector persists trusted evidence; validation rejects stale, incomplete and failed-host evidence while approval restrictions remain enforced.
 - [ ] S1.4 — Baha: advisory/assessment contracts, Debian version-comparison helpers and tests, and a reproducible vulnerable-package fixture specification.
+  - [x] S1.4a — Debian version parsing/comparison helpers and unit tests are merged. Evidence: [merged PR #6](https://github.com/simou-blh/patch-management-agent/pull/6); [version tests](tests/test_debversion.py), included in the 142-test local suite; [recorded CI verification](docs/validation.md#ci-results) includes the dpkg cross-checks.
+  - [ ] S1.4b — Versioned advisory-cache contract, examples and validation tests are reviewed and merged.
+  - [ ] S1.4c — Assessment-result contract, binary/source version fixtures and uncertainty/decision validation tests are reviewed and merged.
+  - [ ] S1.4d — A reproducible vulnerable-package fixture specifies obtainable vulnerable, fixed and previous versions with reset requirements.
 - [ ] S1.5 — Dhia + Ahmed + team: passing foundation/collector CI, reviewed setup/runbook and acceptance checklist, and recorded real inventory/candidate evidence for all three hosts. Deployment remains blocked.
+  - [x] S1.5a — Reviewed Sprint 1 runbook, acceptance checklist, dated local verification and machine-specific setup notes are merged; live checks are explicitly pending. Evidence: [merged PR #4](https://github.com/simou-blh/patch-management-agent/pull/4), [merged PR #5](https://github.com/simou-blh/patch-management-agent/pull/5); [runbook local results](docs/runbook.md#3-verified-local-commands-windows-powershell-repo-root) and [dated validation record](docs/validation.md#update-2026-10-31).
+  - [ ] S1.5b — Dhia records passing foundation/collector CI, including contract, freshness, incomplete-evidence and partial-host-error tests.
+  - [ ] S1.5c — Taha and Dhia record real SSH/osquery inventory and trusted candidate output for vm-01, vm-02 and vm-03 from successful read-only Semaphore inspection.
+  - [ ] S1.5d — The team confirms the day-1 interface decisions and demonstrates the integrated Sprint 1 acceptance walkthrough, including blocked approved/unapproved deployments, with the verified runbook updated accordingly.
 <!-- sprint:1:end -->
 
 ### Sprint 2 — Security assessment and execution preparation
