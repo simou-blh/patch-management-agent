@@ -1,13 +1,101 @@
 ---
-- name: Approved patch implementation gate
+- name: Approved canary exact-version patch
   hosts: all
   gather_facts: false
+  become: true
   serial: 1
   any_errors_fatal: true
+  vars:
+    deployment_unblocked: false
   tasks:
-    - name: Block deployment until the approval-bound executor is implemented
+    - name: Validate exact patch scope against approved expectations
+      patch_packages:
+        target: "{{ inventory_hostname }}"
+        expectations: "{{ patch_expectations | default([]) }}"
+        candidates: "{{ patch_candidates | default({}) }}"
+        policy: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../policies/services.json') | from_json }}"
+        deployment_unblocked: "{{ deployment_unblocked }}"
+      register: patch_result
+      ignore_unreachable: true
+      failed_when: false
+
+    - name: Record patch completion time
+      ansible.builtin.set_fact:
+        patch_completed_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+      run_once: true
+
+    - name: Normalize this host's patch result
+      ansible.builtin.set_fact:
+        host_patch: >-
+          {{
+            {
+              'schema_version': 1,
+              'collected_at': patch_result.collected_at,
+              'target': inventory_hostname,
+              'canary': (inventory_hostname == (patch_canary | default('vm-01'))),
+              'packages': patch_result.packages,
+              'summary': patch_result.summary,
+              'error': patch_result.error
+            }
+            if ((patch_result | default({})).status | default('')) in ['completed', 'failed', 'empty', 'error']
+            else {
+              'schema_version': 1,
+              'collected_at': patch_completed_at,
+              'target': inventory_hostname,
+              'canary': (inventory_hostname == (patch_canary | default('vm-01'))),
+              'packages': {},
+              'summary': {'total': 0, 'applied': 0, 'skipped': 0, 'deferred': 0, 'failed': 0},
+              'error': {
+                'code': 'patch_failed',
+                'message': 'Host did not return structured patch results'
+              }
+            }
+          }}
+
+    - name: Define fallback patch result for unreachable hosts
+      ansible.builtin.set_fact:
+        unreachable_patch:
+          status: error
+          collected_at: "{{ patch_completed_at }}"
+          target: "{{ inventory_hostname }}"
+          canary: false
+          packages: {}
+          summary:
+            total: 0
+            applied: 0
+            skipped: 0
+            deferred: 0
+            failed: 0
+          error:
+            code: unreachable
+            message: Host was unreachable during patching
+      run_once: true
+
+    - name: Emit canary patch result v1
+      ansible.builtin.debug:
+        var: host_patch
+      run_once: true
+
+    - name: Abort when deployment is still blocked
       ansible.builtin.fail:
         msg: >-
-          Foundation only. No packages were changed. Implement the Semaphore
-          facade, exact host/package/version binding, canary verification and
-          dependency-change validation before enabling this playbook.
+          Live deployment is blocked. No packages were changed.
+          Approval, preflight, canary verification and recovery gates must pass
+          before deployment_unblocked can be set to true.
+      when: >-
+        not deployment_unblocked | bool
+      run_once: true
+
+    - name: Abort when any canary package failed to patch
+      ansible.builtin.fail:
+        msg: >-
+          Canary patching failed on {{ inventory_hostname }}.
+          Review the emitted host_patch record. Fleet rollout remains blocked.
+      when: >-
+        host_patch.error is not none or host_patch.summary.failed | int > 0
+      run_once: true
+
+    # This playbook applies exact approved versions only. Service restarts are
+    # limited to the configured allowlist in policies/services.json. Kernel and
+    # major upgrades are deferred. The fail gates above keep deployment blocked
+    # until every live Sprint 3 gate has passed.

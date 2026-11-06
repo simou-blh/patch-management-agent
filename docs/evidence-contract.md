@@ -70,10 +70,43 @@ validate_evidence_contract(example)  # returns None; no network, state writes or
 Malformed shapes raise `jsonschema.ValidationError`. Inconsistent host selection,
 impossible timestamps and duplicate candidate versions raise `ValueError`.
 
+## Producer: `playbooks/inspect.yml`
+
+The fixed inspection playbook now emits one v1 envelope as JSON in its task
+output. Each host is inspected by `playbooks/library/inspect_packages.py`, which
+runs only two read-only commands:
+
+- `dpkg-query -W` with a fixed field list, filtered to packages whose dpkg state
+  is `installed`;
+- `apt-cache policy` for those package names, parsed for available versions and
+  repository origins.
+
+The playbook assembles `schema_version`, `collected_at`, `targets` and `hosts`.
+Unreachable or failed hosts become explicit `status: "error"` records; a failed
+host never erases the other hosts' evidence. The playbook does **not** persist a
+file, run `apt update`, install anything, restart services or start a job.
+Persistence and freshness decisions remain the operator-owned collector (S1.3).
+
+Current producer limitations, to resolve before assessment integration:
+
+- Candidates reflect the APT indexes already present on the host; the producer
+  does not refresh them.
+- Origins are kept only for `http://`, `https://` and `file://` repositories
+  that expose a `suite/component` pair. Flat repositories and other schemes are
+  omitted rather than guessed.
+- Candidate `source` is `null`; installed binary-to-source mapping comes from
+  `dpkg-query`.
+- Candidate origins are filtered by the installed package architecture (`all`
+  packages accept repository architectures).
+- Versions are recorded as strings; assessment must apply Debian ordering.
+- The producer has parser/contract tests but has not been run against the live
+  three-VM lab yet.
+
 ## Compatibility and next boundary
 
-This contract is not yet read by `submit_plan`, the collector or the live playbooks.
-The existing manual `data/evidence.json` host/package map and approval tests stay
+The fixed inspection playbook now produces this contract, but it is not yet read
+by `submit_plan` or the operator-owned collector. The existing manual
+`data/evidence.json` host/package map and approval tests stay
 unchanged. Do not replace that file with the v1 envelope until its consumer integration
 is implemented; no silent migration or automatic conversion happens in this feature.
 

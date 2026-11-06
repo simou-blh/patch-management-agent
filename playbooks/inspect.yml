@@ -2,23 +2,75 @@
 - name: Read installed package and repository evidence
   hosts: all
   gather_facts: false
+  any_errors_fatal: false
   tasks:
-    - name: Read package facts without refreshing APT indexes
-      ansible.builtin.package_facts:
-        manager: apt
+    - name: Collect structured package evidence
+      inspect_packages:
+      register: inspection
+      ignore_unreachable: true
+      failed_when: false
 
-    - name: Read configured repository policy
-      ansible.builtin.command:
-        argv: [apt-cache, policy]
-      register: repository_policy
-      changed_when: false
+    - name: Record inspection completion time
+      ansible.builtin.set_fact:
+        inspection_completed_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+      run_once: true
 
-    - name: Return inspection evidence
+    - name: Normalize this host's evidence record
+      ansible.builtin.set_fact:
+        host_evidence: >-
+          {{
+            {
+              'status': inspection.status,
+              'collected_at': inspection.collected_at,
+              'packages': inspection.packages,
+              'error': inspection.error
+            }
+            if ((inspection | default({})).status | default('')) in ['ok', 'error']
+            else {
+              'status': 'error',
+              'collected_at': inspection_completed_at,
+              'packages': {},
+              'error': {
+                'code': 'inspection_failed',
+                'message': 'Host did not return structured inspection evidence'
+              }
+            }
+          }}
+
+    - name: Define fallback evidence for unreachable hosts
+      ansible.builtin.set_fact:
+        unreachable_evidence:
+          status: error
+          collected_at: "{{ inspection_completed_at }}"
+          packages: {}
+          error:
+            code: unreachable
+            message: Host was unreachable during inspection
+      run_once: true
+
+    - name: Assemble fleet inspection evidence v1
+      ansible.builtin.set_fact:
+        fleet_evidence: >-
+          {{
+            {
+              'schema_version': 1,
+              'collected_at': inspection_completed_at,
+              'targets': ansible_play_hosts_all,
+              'hosts': dict(
+                ansible_play_hosts_all | zip(
+                  ansible_play_hosts_all
+                  | map('extract', hostvars)
+                  | map(attribute='host_evidence', default=unreachable_evidence)
+                )
+              )
+            }
+          }}
+      run_once: true
+
+    - name: Emit fleet inspection evidence v1
       ansible.builtin.debug:
-        msg:
-          host: "{{ inventory_hostname }}"
-          packages: "{{ ansible_facts.packages }}"
-          repository_policy: "{{ repository_policy.stdout }}"
+        var: fleet_evidence
+      run_once: true
 
-    # TODO: fixed candidate/source-package collector, structured artifacts and freshness.
-    # This playbook alone does not produce trusted data/evidence.json yet.
+    # Persisting this record is the operator-owned collector (S1.3). This
+    # playbook only emits the versioned evidence and never mutates a host.

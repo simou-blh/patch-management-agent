@@ -16,8 +16,10 @@ before live execution is enabled.
 ## Plan and approval MCP
 
 The proposed [versioned evidence contract](evidence-contract.md) is available for
-inspection/assessment integration work. Its validator currently stands alone; the
-MCP facade below still uses the existing manual evidence shape shown in this section.
+inspection/assessment integration work. `playbooks/inspect.yml` now emits it, but
+its validator is still not consumed by the MCP facade or the operator-owned
+collector; the facade below still uses the existing manual evidence shape shown
+in this section.
 
 - `submit_plan(plan)` validates `schemas/plan.schema.json` plus candidate evidence,
   then stores the proposal in the local SQLite store.
@@ -58,8 +60,88 @@ This file is a development interface, not an automated collector. `inspect.yml`
 does not generate it yet. Never use the synthetic test versions as live evidence.
 Submission rejects unknown hosts/packages, mismatched installed versions, unavailable
 patch versions, duplicate package decisions, unsupported actions and kernel patches.
-It does not yet validate CVEs, Debian version ordering, dependency changes, repository
-freshness, service checks or recovery artifacts. Approval therefore cannot enable execution.
+It does not yet validate CVEs, Debian version ordering, dependency changes or
+repository freshness. Preflight readiness is a separate v1 contract and is not
+consumed by submission or execution. Approval therefore cannot enable execution.
+
+## Preflight readiness
+
+`playbooks/preflight.yml` emits a versioned readiness envelope from
+`playbooks/library/preflight.py`, validated against
+`schemas/preflight.schema.json` by `patch_agent/preflight.py`. It runs only
+read-only package-manager checks:
+
+- effective root privileges;
+- free space on configured paths;
+- non-blocking probes of APT and dpkg lock files;
+- `dpkg --audit` package-manager health;
+- exact installed-version drift against approved expectations;
+- approved target versions still offered by a configured repository.
+
+Configuration backups and recovery artifacts are optional operator-supplied
+preparation steps. A host is `ready` only when every check passes, the backup is
+`verified`, and the recovery artifacts are `verified`. Missing preparation
+therefore yields `not_ready` with explicit blocking entries instead of a false
+pass. `patch.yml` and `recover.yml` remain fail-gated, and a valid preflight
+record is not an approval.
+
+With `preflight_cache_previous: true` (not in check mode), preflight runs
+`apt-get download <package>=<expected_installed>` into
+`preflight_recovery_artifact_dir` and verifies the downloaded `.deb` files with
+any operator-supplied artifacts. It writes files only; installed packages are
+not changed. A previous version that the repository no longer offers makes the
+recovery artifacts `failed`. Configuration backups are written to
+`<backup_root>/<host>/<timestamp>/<original path>`; recovery must receive that
+exact directory as `recover_backup_root`.
+
+Fixed service restarts and health checks are defined in `policies/services.json`
+and validated by `patch_agent/policies.py` against
+`schemas/policies.schema.json`. Patch and verification must consult that
+allowlist; neither is enabled yet. The playbooks read the file on the controller
+and pass it to `patch_packages`/`verify_packages` as the `policy` argument,
+because Ansible copies only the module file to the target. Library modules must
+stay self-contained: they never import `patch_agent`
+(`tests/test_library_isolation.py` enforces this).
+
+## Patch, verify and recovery contracts
+
+`playbooks/patch.yml`, `playbooks/verify.yml` and `playbooks/recover.yml`
+implement Abderaouf's Sprint 3 canary patch/verify and recovery work, but all
+three stay behind fail gates until deployment is unblocked:
+
+- `playbooks/library/patch_packages.py` enforces exact approved versions, only
+  configured service restarts, no kernel changes, and reports per-package patch
+  outcomes against `schemas/patch.schema.json` (`patch_agent/patch.py`).
+- `playbooks/library/verify_packages.py` compares observed installed versions
+  against the approved plan using Debian version semantics and runs configured
+  service health checks against `schemas/verify.schema.json`
+  (`patch_agent/verify.py`).
+- `playbooks/library/recover_packages.py` captures diagnostics, attempts bounded
+  APT repair and previous-package/config restoration, and reports manual
+  intervention when automated recovery fails against
+  `schemas/recover.schema.json` (`patch_agent/recover.py`). Repair and package
+  restoration are simulated with `apt-get -s` first and refused if APT would
+  remove any package; restored package versions and config bytes are checked
+  after the change.
+
+All three run in read-only simulate mode by default (`deployment_unblocked`
+defaults to `false`). The apply/restart path is gated behind that flag and
+cannot be reached while the foundation keeps deployment blocked.
+
+## Sequential fleet rollout
+
+`playbooks/rollout.yml` implements Abderaouf's Sprint 4 sequential rollout:
+canary (vm-01) first, then vm-02 and vm-03 one at a time (`serial: 1`). For each
+host it runs preflight → patch → verify in sequence. When any step fails on a
+host, recovery runs on that host only (`recover_packages`), and a fail gate
+stops the rollout before the next host. Later fleet hosts are never touched
+after a failure.
+
+The coordinator module `playbooks/library/sequential_rollout.py` decides per
+host whether to `proceed` or `recover`, validated against
+`schemas/rollout.schema.json` by `patch_agent/rollout.py`. Deployment stays
+blocked (`deployment_unblocked` defaults to `false`) until every live Sprint 3/4
+gate has passed.
 
 ## Trust boundary
 

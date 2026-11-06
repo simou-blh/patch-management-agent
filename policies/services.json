@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "restart_policy": "configured-only",
+  "services": {
+    "ssh": {
+      "restart": "on-change",
+      "health_checks": [
+        {"type": "tcp", "host": "127.0.0.1", "port": 22, "timeout_seconds": 5}
+      ]
+    }
+  },
+  "packages": {
+    "openssh-server": {"services": ["ssh"]}
+  }
+}

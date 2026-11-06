@@ -1,14 +1,106 @@
 ---
-- name: Recovery implementation gate
+- name: Approved recovery for failed patch targets
   hosts: all
   gather_facts: false
+  become: true
   serial: 1
   any_errors_fatal: true
+  vars:
+    deployment_unblocked: false
   tasks:
-    - name: Block until approved recovery actions are implemented
+    - name: Capture diagnostics and attempt bounded recovery
+      recover_packages:
+        target: "{{ inventory_hostname }}"
+        previous_packages: "{{ recover_previous_packages | default([]) }}"
+        config_paths: "{{ recover_config_paths | default([]) }}"
+        backup_root: "{{ recover_backup_root | default(omit) }}"
+        deployment_unblocked: "{{ deployment_unblocked }}"
+      register: recover_result
+      ignore_unreachable: true
+      failed_when: false
+
+    - name: Record recovery completion time
+      ansible.builtin.set_fact:
+        recover_completed_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+      run_once: true
+
+    - name: Normalize this host's recovery result
+      ansible.builtin.set_fact:
+        host_recover: >-
+          {{
+            {
+              'schema_version': 1,
+              'collected_at': recover_result.collected_at,
+              'target': inventory_hostname,
+              'diagnostics': recover_result.diagnostics,
+              'repair': recover_result.repair,
+              'restoration': recover_result.restoration,
+              'manual_intervention': recover_result.manual_intervention,
+              'error': recover_result.error
+            }
+            if ((recover_result | default({})).status | default('')) in ['succeeded', 'failed', 'manual_required', 'error']
+            else {
+              'schema_version': 1,
+              'collected_at': recover_completed_at,
+              'target': inventory_hostname,
+              'diagnostics': {},
+              'repair': {
+                'attempted': false,
+                'command': 'not run',
+                'dry_run': true,
+                'result': 'not_attempted',
+                'detail': 'Host did not return structured recovery results'
+              },
+              'restoration': {
+                'previous_packages': [],
+                'config_backups': []
+              },
+              'manual_intervention': true,
+              'error': {
+                'code': 'recover_failed',
+                'message': 'Host did not return structured recovery results'
+              }
+            }
+          }}
+
+    - name: Define fallback recovery result for unreachable hosts
+      ansible.builtin.set_fact:
+        unreachable_recover:
+          status: error
+          collected_at: "{{ recover_completed_at }}"
+          target: "{{ inventory_hostname }}"
+          diagnostics: {}
+          repair:
+            attempted: false
+            command: 'not run'
+            dry_run: true
+            result: 'not_attempted'
+            detail: 'Host was unreachable during recovery'
+          restoration:
+            previous_packages: []
+            config_backups: []
+          manual_intervention: true
+          error:
+            code: unreachable
+            message: Host was unreachable during recovery
+      run_once: true
+
+    - name: Emit recovery result v1
+      ansible.builtin.debug:
+        var: host_recover
+      run_once: true
+
+    - name: Abort when recovery requires manual intervention
       ansible.builtin.fail:
         msg: >-
-          Foundation only. No recovery was attempted. Implement diagnostic
-          capture, bounded APT repair, cached previous packages, configuration
-          restore and post-recovery health checks. Never report rollback success
-          without checking observed versions and health.
+          Recovery on {{ inventory_hostname }} requires manual intervention.
+          Review the emitted host_recover record. No further fleet hosts are touched.
+      when: >-
+        host_recover.manual_intervention | bool or host_recover.error is not none
+      run_once: true
+
+    # This recovery playbook only affects the failed/modified host. It captures
+    # diagnostics, attempts bounded APT repair, restores previous package
+    # versions and backed-up configuration, and reports manual intervention when
+    # automated recovery fails. VM snapshots remain the lab recovery fallback.
+    # The fail gate above keeps deployment blocked until recovery passes.

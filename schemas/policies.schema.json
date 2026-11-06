@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Fixed service restart and health-check policies",
+  "description": "Allowlist used by patch and verification playbooks. It does not itself restart anything.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "restart_policy", "services", "packages"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "restart_policy": {"const": "configured-only"},
+    "services": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/service_name"},
+      "additionalProperties": {"$ref": "#/$defs/service"}
+    },
+    "packages": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/package_name"},
+      "additionalProperties": {
+        "type": "object", "additionalProperties": false,
+        "required": ["services"],
+        "properties": {
+          "services": {
+            "type": "array", "minItems": 1, "uniqueItems": true,
+            "items": {"$ref": "#/$defs/service_name"}
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "service_name": {
+      "type": "string", "pattern": "^[a-z0-9][a-z0-9@_.-]{0,63}$",
+      "not": {"pattern": "\\s"}
+    },
+    "package_name": {
+      "type": "string", "pattern": "^[a-z0-9][a-z0-9+.-]+(:[a-z0-9][a-z0-9-]*)?$",
+      "not": {"pattern": "\\s"}
+    },
+    "timeout": {"type": "integer", "minimum": 1, "maximum": 120},
+    "tcp_check": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "host", "port", "timeout_seconds"],
+      "properties": {
+        "type": {"const": "tcp"},
+        "host": {"type": "string", "minLength": 1, "not": {"pattern": "\\s"}},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "timeout_seconds": {"$ref": "#/$defs/timeout"}
+      }
+    },
+    "http_check": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "url", "expect_status", "timeout_seconds"],
+      "properties": {
+        "type": {"const": "http"},
+        "url": {"type": "string", "pattern": "^https?://", "not": {"pattern": "\\s"}},
+        "expect_status": {"type": "integer", "minimum": 100, "maximum": 599},
+        "timeout_seconds": {"$ref": "#/$defs/timeout"}
+      }
+    },
+    "systemd_check": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "unit"],
+      "properties": {
+        "type": {"const": "systemd"},
+        "unit": {"$ref": "#/$defs/service_name"}
+      }
+    },
+    "health_check": {
+      "oneOf": [
+        {"$ref": "#/$defs/tcp_check"},
+        {"$ref": "#/$defs/http_check"},
+        {"$ref": "#/$defs/systemd_check"}
+      ]
+    },
+    "service": {
+      "type": "object", "additionalProperties": false,
+      "required": ["restart", "health_checks"],
+      "properties": {
+        "restart": {"enum": ["on-change", "never"]},
+        "health_checks": {
+          "type": "array", "uniqueItems": true,
+          "items": {"$ref": "#/$defs/health_check"}
+        }
+      }
+    }
+  }
+}

@@ -1,22 +1,87 @@
 ---
-- name: Read observed Debian package versions
+- name: Read observed Debian package versions and run health checks
   hosts: all
   gather_facts: false
   become: true
+  serial: 1
+  any_errors_fatal: false
+  vars:
+    deployment_unblocked: false
   tasks:
-    - name: Read versions through a fixed osquery query
-      ansible.builtin.command:
-        argv:
-          - osqueryi
-          - --json
-          - "SELECT name, version, source FROM deb_packages;"
-      register: observed_packages
-      changed_when: false
+    - name: Verify observed versions against the approved plan
+      verify_packages:
+        target: "{{ inventory_hostname }}"
+        expectations: "{{ verify_expectations | default([]) }}"
+        policy: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../policies/services.json') | from_json }}"
+        deployment_unblocked: "{{ deployment_unblocked }}"
+      register: verify_result
+      ignore_unreachable: true
+      failed_when: false
 
-    - name: Return observations for comparison against the approved plan
+    - name: Record verification completion time
+      ansible.builtin.set_fact:
+        verify_completed_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+      run_once: true
+
+    - name: Normalize this host's verify result
+      ansible.builtin.set_fact:
+        host_verify: >-
+          {{
+            {
+              'schema_version': 1,
+              'collected_at': verify_result.collected_at,
+              'target': inventory_hostname,
+              'packages': verify_result.packages,
+              'summary': verify_result.summary,
+              'error': verify_result.error
+            }
+            if ((verify_result | default({})).status | default('')) in ['passed', 'failed', 'empty', 'error']
+            else {
+              'schema_version': 1,
+              'collected_at': verify_completed_at,
+              'target': inventory_hostname,
+              'packages': {},
+              'summary': {'total': 0, 'passed': 0, 'failed': 0, 'error': 0},
+              'error': {
+                'code': 'verify_failed',
+                'message': 'Host did not return structured verify results'
+              }
+            }
+          }}
+
+    - name: Define fallback verify result for unreachable hosts
+      ansible.builtin.set_fact:
+        unreachable_verify:
+          status: error
+          collected_at: "{{ verify_completed_at }}"
+          target: "{{ inventory_hostname }}"
+          packages: {}
+          summary:
+            total: 0
+            passed: 0
+            failed: 0
+            error: 0
+          error:
+            code: unreachable
+            message: Host was unreachable during verification
+      run_once: true
+
+    - name: Emit verification result v1
       ansible.builtin.debug:
-        msg:
-          host: "{{ inventory_hostname }}"
-          packages: "{{ observed_packages.stdout | from_json }}"
-    # TODO: compare exact versions and run the configured health checks.
-    # A successful read is not a passed deployment verification.
+        var: host_verify
+      run_once: true
+
+    - name: Abort when any canary package verification failed
+      ansible.builtin.fail:
+        msg: >-
+          Canary verification failed on {{ inventory_hostname }}.
+          Observed versions or service health checks do not match the approved plan.
+          Fleet rollout remains blocked.
+      when: >-
+        host_verify.error is not none or host_verify.summary.failed | int > 0
+        or host_verify.summary.error | int > 0
+      run_once: true
+
+    # This playbook only reads installed versions and probes configured health
+    # checks. It never installs, removes, restarts or changes anything. The fail
+    # gate above keeps the canary from advancing until verification passes.

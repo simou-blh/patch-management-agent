@@ -108,7 +108,7 @@ PR review; nothing here changes code.
 |---|---|---|---|
 | 1 | Evidence format is the versioned contract v1 ([evidence-contract.md](evidence-contract.md), S1.2a merged). The validator stands alone; `submit_plan` does not read it yet. | plan.md S1.2 | Abderaouf, Wassim, Baha |
 | 2 | Manual `data/evidence.json` stays the plan-validation input until Wassim's collector replaces it. No silent migration to the v1 envelope. | evidence-contract.md | Wassim |
-| 3 | Inspection and verification templates are read-only; preflight, patch and recover stay blocked. | plan.md section 1 | Abderaouf, Taha |
+| 3 | Inspection, preflight and verification templates are read-only; patch, verify and recover are simulate-only; rollout is sequential with per-host proceed/recover decisions. Deployment_unblocked defaults to false. | plan.md section 1 | Abderaouf, Taha |
 | 4 | Template IDs are agreed between Taha and Abderaouf and recorded in an operator-owned mapping, not in model-visible config. | plan.md S1.2d, SETUP.md | Taha, Abderaouf |
 | 5 | Mocked/synthetic results and live results are recorded in separate places and never merged into one pass/fail claim. | Sprint 1 PDF (Dhia) | Dhia |
 | 6 | A plan checkbox is ticked only after merged work plus an `Evidence:` reference. This runbook does not tick any. | AGENTS.md, plan.md section 5 | Whole team |
@@ -198,13 +198,16 @@ scenario table in [plan.md](../plan.md). None runs against a real lab yet.
 | 1 | The real lab has not been brought up: VMs, SSH from WSL, Docker-to-host-only routing, Semaphore. | Taha | Everything tagged `PENDING-LIVE` depends on it. See the live gates in [SETUP.md](../SETUP.md). |
 | 2 | Signed osquery bootstrap playbook is not implemented. | Taha | Needed before `check_env.sh --live` can pass. |
 | 3 | Transitive Python dependencies are not locked in Git; `uv.lock` is generated locally and untracked. | Taha | Review and commit once; others pull it. |
-| 4 | Candidate evidence is manual (`data/evidence.json`); `inspect.yml` does not emit contract v1 yet. | Abderaouf, Wassim | S1.2c and S1.3. |
+| 4 | Candidate evidence is manual (`data/evidence.json`); `inspect.yml` now emits contract v1, but the collector does not persist it and live verification is pending. | Abderaouf, Wassim | S1.2c and S1.3. |
 | 5 | Evidence contract v1 is not consumed by `submit_plan` or any collector. | Wassim | Freshness/completeness rules still to be agreed (S1.2b). |
 | 6 | `semaphore/templates.json` is a design list; no Semaphore project, credentials or template IDs exist. | Taha, Abderaouf | S1.2d. |
 | 7 | Debian advisory matching and version-comparison helpers do not exist. | Baha | Sprint 1 contracts, Sprint 2 implementation. |
 | 8 | Box availability: the pinned Bento version must still be downloadable when the lab is built, and its real size is unmeasured. | Taha | Check before downloading; see [download-budget.md](download-budget.md). |
 | 9 | Documentation drift: `docs/validation.md` still reports 27 passing tests (99 verified on 2026-10-31); `docs/download-budget.md` lists tools "already installed" on one developer's machine only. | Ahmed | Fix in a follow-up docs change; not part of this runbook. |
 | 10 | `scripts/check_env.sh` is bash and only runs in WSL, so Windows-only machines cannot run it. | Dhia | Record live check results from the lab machine. |
+| 11 | Preflight has parser/contract tests but has not run against the live lab; backup roots, configuration paths and recovery artifacts are operator-supplied. | Abderaouf | S2.4; a real run must prove a ready host and a blocked host. |
+| 12 | Patch, verify and recovery playbooks are implemented in simulate mode only; `deployment_unblocked` defaults to false. Live patching, service restarts and recovery on the real lab are pending. | Abderaouf | S3.2 and S3.3; requires live lab and approved canary. |
+| 13 | Sequential rollout playbook and coordinator are implemented in simulate mode; `deployment_unblocked` defaults to false. Live fleet rollout on vm-02/vm-03 is pending. | Abderaouf | S4.1; requires live lab, Semaphore templates and approved canary. |
 
 ## 10. Sprint 1 acceptance checklist
 
@@ -219,7 +222,7 @@ deployment remains blocked.
 | Item | Outcome | Mocked/synthetic evidence | Live evidence |
 |---|---|---|---|
 | S1.1 | Locked dependencies, three reachable VMs, signed osquery, snapshots, read-only Semaphore job | Not applicable | None yet |
-| S1.2 | Agreed evidence format; fixed inspection emits it; template mapping and a successful inspection job | Contract v1 validator, fixtures and tests merged (S1.2a) | None yet |
+| S1.2 | Agreed evidence format; fixed inspection emits it; template mapping and a successful inspection job | Contract v1 validator, fixtures and tests merged (S1.2a); `inspect.yml` v1 producer and parser/contract tests pass locally (S1.2c code) | None yet |
 | S1.3 | Operator-owned collector; stale, incomplete and failed-host evidence rejected | None yet | None yet |
 | S1.4 | Advisory/assessment contracts, Debian version helpers with tests, vulnerable-package fixture spec | None yet | None yet |
 | S1.5 | Passing CI, reviewed runbook and acceptance checklist, real inventory/candidate evidence for all three hosts | 99 tests pass locally; synthetic demo passes; README progress bars current (2026-10-31) | None yet |

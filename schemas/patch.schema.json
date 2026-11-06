@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Fleet exact-version patch result v1",
+  "description": "Per-host patch outcome. Schema validity does not authorize execution; only a deployed, approved canary may mutate hosts.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "collected_at", "target", "packages", "summary", "error"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "collected_at": {"$ref": "#/$defs/timestamp"},
+    "target": {"$ref": "#/$defs/host_name"},
+    "canary": {"type": "boolean"},
+    "packages": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/package_name"},
+      "additionalProperties": {"$ref": "#/$defs/package_result"}
+    },
+    "summary": {
+      "type": "object", "additionalProperties": false,
+      "required": ["total", "applied", "skipped", "deferred", "failed"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "applied": {"type": "integer", "minimum": 0},
+        "skipped": {"type": "integer", "minimum": 0},
+        "deferred": {"type": "integer", "minimum": 0},
+        "failed": {"type": "integer", "minimum": 0}
+      }
+    },
+    "error": {
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["code", "message"],
+          "properties": {"code": {"$ref": "#/$defs/text"}, "message": {"$ref": "#/$defs/text"}}
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "timestamp": {
+      "type": "string", "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$",
+      "not": {"pattern": "\\s"}
+    },
+    "host_name": {
+      "type": "string", "pattern": "^[a-z][a-z0-9-]{0,62}$",
+      "not": {"pattern": "\\s"}
+    },
+    "package_name": {
+      "type": "string", "pattern": "^[a-z0-9][a-z0-9+.-]+(:[a-z0-9][a-z0-9-]*)?$",
+      "not": {"pattern": "\\s"}
+    },
+    "version": {"type": "string", "minLength": 1, "not": {"pattern": "\\s"}},
+    "package_action": {"enum": ["patch", "defer"]},
+    "package_status": {"enum": ["applied", "skipped", "deferred", "failed"]},
+    "service_restart_entry": {
+      "type": "object", "additionalProperties": false,
+      "required": ["service", "allowed", "detail"],
+      "properties": {
+        "service": {"$ref": "#/$defs/text"},
+        "allowed": {"type": "boolean"},
+        "detail": {"$ref": "#/$defs/text"}
+      }
+    },
+    "service_restart_result": {
+      "type": "object", "additionalProperties": false,
+      "required": ["service", "restarted", "error"],
+      "properties": {
+        "service": {"$ref": "#/$defs/text"},
+        "restarted": {"type": "boolean"},
+        "error": {
+          "anyOf": [
+            {"type": "null"},
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["code", "message"],
+              "properties": {"code": {"$ref": "#/$defs/text"}, "message": {"$ref": "#/$defs/text"}}
+            }
+          ]
+        }
+      }
+    },
+    "package_result": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "architecture", "status", "detail", "installed_before",
+                   "installed_after", "target_version", "action", "service_restart", "error"],
+      "properties": {
+        "name": {"$ref": "#/$defs/package_name"},
+        "architecture": {
+          "anyOf": [{"type": "null"}, {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"}]
+        },
+        "status": {"$ref": "#/$defs/package_status"},
+        "detail": {"$ref": "#/$defs/text"},
+        "installed_before": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/version"}]},
+        "installed_after": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/version"}]},
+        "target_version": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/version"}]},
+        "action": {"$ref": "#/$defs/package_action"},
+        "service_restart": {
+          "type": "array", "items": {"$ref": "#/$defs/service_restart_result"}
+        },
+        "error": {
+          "anyOf": [
+            {"type": "null"},
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["code", "message"],
+              "properties": {"code": {"$ref": "#/$defs/text"}, "message": {"$ref": "#/$defs/text"}}
+            }
+          ]
+        }
+      }
+    }
+  }
+}

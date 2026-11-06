@@ -21,7 +21,7 @@ The goal now is a lightweight, reviewable foundation the six developers can exte
 | osquery MCP | Implemented fixed queries and per-host errors; mocked SSH tests |
 | Approval facade | Implemented schema/evidence validation, storage, hash binding, operator decisions |
 | Live deployment | Blocked for all plans, including approved ones |
-| Five playbooks | Inspect/verify collect observations; preflight/patch/recover explicitly fail |
+| Five playbooks | Inspect/preflight/verify collect read-only evidence and readiness; patch/verify/recover implemented in simulate mode with fail gates; rollout is sequential with per-host proceed/recover; preflight also verifies optional backups/artifacts |
 | Semaphore services/templates | Compose prepared; template list is design-only; services not started |
 | Plan/report schemas | Starter schemas; report currently covers blocked requests only |
 | Tests | Validation, approvals, persistence, inventory and in-process MCP checks |
