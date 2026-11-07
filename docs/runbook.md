@@ -196,14 +196,14 @@ scenario table in [plan.md](../plan.md). None runs against a real lab yet.
 | # | Blocker | Owner | Notes |
 |---|---|---|---|
 | 1 | The real lab has not been brought up: VMs, SSH from WSL, Docker-to-host-only routing, Semaphore. | Taha | Everything tagged `PENDING-LIVE` depends on it. See the live gates in [SETUP.md](../SETUP.md). |
-| 2 | Signed osquery bootstrap playbook is not implemented. | Taha | Needed before `check_env.sh --live` can pass. |
+| 2 | Bootstrap with pinned SHA-256 is merged in [PR #8](https://github.com/simou-blh/patch-management-agent/pull/8); signed-package verification and real VM installation remain unverified. | Taha | Operator command: see [SETUP.md section 4](../SETUP.md#4-ssh-and-osquery). Required before accepting S1.1. |
 | 3 | Transitive Python dependencies are not locked in Git; `uv.lock` is generated locally and untracked. | Taha | Review and commit once; others pull it. |
-| 4 | Candidate evidence is manual (`data/evidence.json`); `inspect.yml` now emits contract v1, but the collector does not persist it and live verification is pending. | Abderaouf, Wassim | S1.2c and S1.3. |
-| 5 | Evidence contract v1 is not consumed by `submit_plan` or any collector. | Wassim | Freshness/completeness rules still to be agreed (S1.2b). |
+| 4 | The operator importer accepts contract-v1 exports and `inspect.yml` now emits them (read-only run verified on vm-01/vm-02/vm-03 from WSL, outside Semaphore); trusted Semaphore transport is unverified. | Abderaouf, Wassim, Taha | S1.2c merge and the live S1.3 handoff remain pending; do not fabricate exports. |
+| 5 | Import/submission enforce freshness and complete successful host results; the operator age limit and producer/consumer agreement still need team confirmation. | Wassim | Explicit policy is required (S1.2b); see [SETUP.md](../SETUP.md) for configuration and legacy-file handling. |
 | 6 | `semaphore/templates.json` is a design list; no Semaphore project, credentials or template IDs exist. | Taha, Abderaouf | S1.2d. |
-| 7 | Debian advisory matching and version-comparison helpers do not exist. | Baha | Sprint 1 contracts, Sprint 2 implementation. |
+| 7 | Debian version helpers are merged in [PR #6](https://github.com/simou-blh/patch-management-agent/pull/6); advisory/assessment contracts and matching remain pending. | Baha | S1.4a records helper verification; remaining contracts/fixtures belong to Sprint 1, matching to Sprint 2. |
 | 8 | Box availability: the pinned Bento version must still be downloadable when the lab is built, and its real size is unmeasured. | Taha | Check before downloading; see [download-budget.md](download-budget.md). |
-| 9 | Documentation drift: `docs/validation.md` still reports 27 passing tests (99 verified on 2026-10-31); `docs/download-budget.md` lists tools "already installed" on one developer's machine only. | Ahmed | Fix in a follow-up docs change; not part of this runbook. |
+| 9 | **Resolved:** verification results are dated and installed-tool notes identify the original machine. | Ahmed | [PR #5](https://github.com/simou-blh/patch-management-agent/pull/5) merged on 2026-11-04; the original validation record remains preserved. |
 | 10 | `scripts/check_env.sh` is bash and only runs in WSL, so Windows-only machines cannot run it. | Dhia | Record live check results from the lab machine. |
 | 11 | Preflight has parser/contract tests but has not run against the live lab; backup roots, configuration paths and recovery artifacts are operator-supplied. | Abderaouf | S2.4; a real run must prove a ready host and a blocked host. |
 | 12 | Patch, verify and recovery playbooks are implemented in simulate mode only; `deployment_unblocked` defaults to false. Live patching, service restarts and recovery on the real lab are pending. | Abderaouf | S3.2 and S3.3; requires live lab and approved canary. |
@@ -223,9 +223,9 @@ deployment remains blocked.
 |---|---|---|---|
 | S1.1 | Locked dependencies, three reachable VMs, signed osquery, snapshots, read-only Semaphore job | Not applicable | None yet |
 | S1.2 | Agreed evidence format; fixed inspection emits it; template mapping and a successful inspection job | Contract v1 validator, fixtures and tests merged (S1.2a); `inspect.yml` v1 producer and parser/contract tests pass locally (S1.2c code) | None yet |
-| S1.3 | Operator-owned collector; stale, incomplete and failed-host evidence rejected | None yet | None yet |
-| S1.4 | Advisory/assessment contracts, Debian version helpers with tests, vulnerable-package fixture spec | None yet | None yet |
-| S1.5 | Passing CI, reviewed runbook and acceptance checklist, real inventory/candidate evidence for all three hosts | 99 tests pass locally; synthetic demo passes; README progress bars current (2026-10-31) | None yet |
+| S1.3 | Operator-owned collector; stale, incomplete and failed-host evidence rejected | Import/publication and approval readiness checks have synthetic coverage; live producer/transport integration remains pending | None yet |
+| S1.4 | Advisory/assessment contracts, Debian version helpers with tests, vulnerable-package fixture spec | Version helpers and tests merged in PR #6 (S1.4a); contracts and vulnerable-package fixture remain pending | None yet |
+| S1.5 | Passing CI, reviewed runbook and acceptance checklist, real inventory/candidate evidence for all three hosts | Runbook and dated validation/setup corrections merged in PRs #4/#5 (S1.5a). Recorded 2026-10-31: 99 local tests, synthetic demo and progress check passed. CI and interface confirmation remain pending. | None yet |
 
 Local checks to repeat before any Sprint 1 PR (Windows PowerShell, repo root):
 

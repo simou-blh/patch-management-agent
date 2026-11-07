@@ -11,6 +11,7 @@ from jsonschema import Draft202012Validator
 
 from patch_agent.approval import ApprovalStore
 from patch_agent.approval_mcp import mcp as approval_server
+import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 REPORT_SCHEMA = json.loads((ROOT / "schemas/report.schema.json").read_text(encoding="utf-8"))
@@ -76,6 +77,34 @@ def test_in_process_approval_lifecycle_is_isolated_and_operator_owned(
 
     asyncio.run(scenario())
     assert (tmp_path / "approvals.sqlite").is_file()
+
+
+@pytest.mark.parametrize("failure", ["missing", "malformed", "legacy", "stale", "policy"])
+def test_mcp_rejects_invalid_operator_evidence(tmp_path, monkeypatch, plan, evidence, failure):
+    monkeypatch.setenv("PATCH_AGENT_DATA_DIR", str(tmp_path))
+    if failure == "legacy":
+        evidence = evidence["hosts"]
+    elif failure == "stale":
+        evidence["collected_at"] = "2000-01-01T00:00:00Z"
+        for host in evidence["hosts"].values():
+            host["collected_at"] = evidence["collected_at"]
+    elif failure == "policy":
+        monkeypatch.delenv("PATCH_AGENT_EVIDENCE_MAX_AGE_SECONDS")
+    if failure != "missing":
+        write_evidence(tmp_path, evidence)
+    if failure == "malformed":
+        (tmp_path / "evidence.json").write_text("broken secret-value", encoding="utf-8")
+
+    async def scenario():
+        async with Client(approval_server, raise_exceptions=True) as client:
+            result = await client.call_tool("submit_plan", {"plan": plan})
+            assert result.is_error
+            assert "secret-value" not in str(result.content)
+
+    asyncio.run(scenario())
+    if (tmp_path / "approvals.sqlite").exists():
+        with ApprovalStore(tmp_path).connect() as db:
+            assert db.execute("SELECT COUNT(*) FROM plans").fetchone()[0] == 0
 
 
 def test_subprocess_approval_server_honors_env_configured_store(tmp_path, plan, evidence):

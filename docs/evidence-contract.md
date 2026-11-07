@@ -99,21 +99,50 @@ Current producer limitations, to resolve before assessment integration:
 - Candidate origins are filtered by the installed package architecture (`all`
   packages accept repository architectures).
 - Versions are recorded as strings; assessment must apply Debian ordering.
-- The producer has parser/contract tests but has not been run against the live
-  three-VM lab yet.
+- The producer has parser/contract tests and a contract-valid read-only run on
+  vm-01/vm-02/vm-03 from WSL; a Semaphore-run inspection job is still pending.
 
 ## Compatibility and next boundary
 
-The fixed inspection playbook now produces this contract, but it is not yet read
-by `submit_plan` or the operator-owned collector. The existing manual
-`data/evidence.json` host/package map and approval tests stay
-unchanged. Do not replace that file with the v1 envelope until its consumer integration
-is implemented; no silent migration or automatic conversion happens in this feature.
+The fixed inspection playbook (`playbooks/inspect.yml`) produces this contract.
 
-Passing this validator does **not** establish trusted provenance, authorized inventory
+`patch_agent.evidence.validate_evidence_readiness(document, targets=[...],
+max_age=timedelta(...))` is the import/submission validation gate. It first checks
+the v1 contract, then requires an exact match with the operator's requested targets,
+membership in the configured `lab/hosts.json` inventory, and successful results for
+every selected host. Both collection and per-host timestamps must be no older than
+`max_age` and no later than the current time. The age limit is inclusive; any future
+timestamp is rejected without a clock-skew allowance. Host order is irrelevant.
+
+The operator must explicitly supply a positive `datetime.timedelta` age limit from
+trusted configuration; there is no default lifetime and evidence/model content must
+not choose it. An optional timezone-aware `now` supports deterministic tests; normal
+calls use the current UTC time. This check does not verify provenance, completeness
+of the package inventory, source/advisory matches or repository trust, and does not
+write evidence or authorize approval. Null source mappings and empty candidate lists
+retain their existing explicit meanings.
+
+The operator-only `python -m patch_agent.collector` command imports a trusted v1
+inspection export and preserves its original timestamps. It takes an exclusive
+`evidence.lock`, validates, writes a private temporary file, flushes it to disk,
+revalidates freshness, and atomically replaces `evidence.json`. Failed imports leave
+the previous collection intact, still subject to freshness checks at submission.
+Older collection/overlapping-host timestamps cannot replace newer ones. Concurrent
+imports fail; interrupted processes may leave a lock/temp file for operator review.
+
+Import and `submit_plan` read the age policy from the operator environment variable
+`PATCH_AGENT_EVIDENCE_MAX_AGE_SECONDS`. Missing/invalid policy blocks both paths.
+The legacy manual host/package map is rejected. Archive an old legacy/invalid state
+file outside Git before importing a real v1 export; do not fabricate timestamps or
+source/architecture data to migrate it. No automatic conversion or SQLite migration
+occurs. Existing plans/decisions remain stored and all deployment stays blocked.
+
+Passing `validate_evidence_contract` does **not** establish trusted provenance, authorized inventory
 membership, freshness, complete inspection coverage, advisory correctness or patch
 eligibility. Old/future collections and failed-host diagnostic records can be structurally
-valid. The next feature must reject them for affected selected hosts using agreed
-freshness/completeness rules and a trusted collector. All deployment remains blocked.
+valid. Readiness is rechecked at each import and plan submission. Producer integration
+is still pending: `inspect.yml` must emit the agreed contract and the team must verify
+the trusted Semaphore export/transport against the real three-host lab. The importer
+does not establish provenance merely by accepting a structurally valid file.
 
 Validation uses the project's existing [jsonschema validator pattern](https://python-jsonschema.readthedocs.io/en/stable/validate/).

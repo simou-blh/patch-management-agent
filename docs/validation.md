@@ -113,3 +113,28 @@ partial-host collection is valid diagnostics but cannot be used as approval evid
 
 No checkpoint changed. S1.2a remains the only checked Sprint 1 item; this section records
 verification only and does not modify `plan.md` or the README progress bars.
+
+## Update 2026-11-07 — Evidence import and approval integration
+
+Verified on Windows with the repository's Python 3.12 virtual environment:
+
+- `python -m pytest -q`: **204 passed, 400 skipped**. Skips require Linux `dpkg`;
+  no dependency versions were changed or downloaded.
+- `python scripts/check_artifacts.py`: passed.
+- `python scripts/update_progress.py --check`: passed; no new checkpoint is checked
+  for this unmerged work.
+- The suite exercises the operator import CLI and actual approval MCP subprocess,
+  as well as the isolated synthetic demo. The demo now imports contract-v1 evidence
+  before submitting plans; it still starts no VM, Ansible or Semaphore jobs.
+
+Import/submission reject stale/future evidence, failed/missing or unrequested hosts,
+legacy evidence maps and missing operator age policy. Tests also cover candidate
+architecture isolation, concurrent import locking, older-result regression and an
+interrupted atomic replacement preserving the previous collection.
+
+The live producer/export and trusted Semaphore transport are still pending. The
+existing inspection playbook does not emit v1 yet. An operator-owned import path
+does not authenticate a file's provenance; only import actual trusted observations.
+The team must agree the age limit before configuring the importer/MCP. Existing
+SQLite plans remain intact, legacy evidence needs explicit archival/recollection,
+and deployment remains blocked even after approval.

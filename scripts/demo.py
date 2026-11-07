@@ -24,13 +24,19 @@ from mcp import Client, StdioServerParameters  # noqa: E402
 
 def demo_inputs():
     hosts = ["vm-01", "vm-02", "vm-03"]
-    evidence = {host: {"packages": {"demo-package": {
-        "installed": "1.0-1", "candidates": ["1.0-2"],
-    }}} for host in hosts}
+    timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    evidence = {"schema_version": 1, "collected_at": timestamp, "targets": hosts,
+        "hosts": {host: {"status": "ok", "collected_at": timestamp, "error": None,
+            "packages": {"demo-package:amd64": {
+                "installed": "1.0-1", "source": None,
+                "candidates": [{"version": "1.0-2", "source": None, "origins": [{
+                    "uri": "https://repo.example.invalid/debian", "suite": "bookworm",
+                    "component": "main"}]}],
+            }}} for host in hosts}}
     plan = {
         "run_id": "synthetic-demo", "targets": hosts, "canary": "vm-01",
         "packages": [{
-            "host": host, "name": "demo-package", "current_version": "1.0-1",
+            "host": host, "name": "demo-package:amd64", "current_version": "1.0-1",
             "proposed_version": "1.0-2", "action": "patch", "priority": "high",
             "advisories": ["SYNTHETIC-DEMO-NOT-A-REAL-ADVISORY"],
             "reason": "Synthetic evidence for testing the approval boundary only.",
@@ -47,14 +53,21 @@ async def run_demo(output_dir):
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=False)
     evidence, plan = demo_inputs()
-    (output_dir / "evidence.json").write_text(json.dumps(evidence, indent=2), encoding="utf-8")
+    source = output_dir / "synthetic-inspection.json"
+    source.write_text(json.dumps(evidence, indent=2), encoding="utf-8")
     (output_dir / "plan.json").write_text(json.dumps(plan, indent=2), encoding="utf-8")
-    env = {**os.environ, "PATCH_AGENT_DATA_DIR": str(output_dir)}
+    env = {**os.environ, "PATCH_AGENT_DATA_DIR": str(output_dir),
+           "PATCH_AGENT_EVIDENCE_MAX_AGE_SECONDS": "300"}  # Synthetic demo policy only.
     events = []
 
     def record(step, detail):
         print(f"PASS  {step}: {detail}", flush=True)
         events.append({"step": step, "detail": detail})
+
+    await asyncio.to_thread(subprocess.run,
+        [sys.executable, "-m", "patch_agent.collector", str(source), "--targets", *plan["targets"]],
+        cwd=ROOT, env=env, capture_output=True, text=True, timeout=30, check=True)
+    record("Operator evidence import", "validated contract v1 and atomically published synthetic evidence")
 
     async def call(client, name, arguments, *, error_contains=None):
         response = await client.call_tool(name, arguments)

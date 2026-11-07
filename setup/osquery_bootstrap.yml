@@ -1,0 +1,70 @@
+#!/usr/bin/env ansible-playbook
+---
+# Bootstrap osquery on the Debian 12 lab fleet using the official release
+# package from osquery/osquery with pinned SHA-256 verification.
+# Downloads the .deb once on the control node to minimize mobile-data usage,
+# then distributes and installs it across all VMs.
+- name: Cache official osquery package on control node
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    osquery_deb_url: "https://github.com/osquery/osquery/releases/download/5.24.0/osquery_5.24.0-1.linux_amd64.deb"
+    osquery_deb_sha256: "sha256:8ae0416d85336a1aea6883920ae9c2751a98538fe0bb624822e92934d3be5592"
+    osquery_local_deb: "/tmp/osquery_5.24.0-1.linux_amd64.deb"
+  tasks:
+    - name: Download official osquery .deb once and verify SHA-256 checksum
+      ansible.builtin.get_url:
+        url: "{{ osquery_deb_url }}"
+        dest: "{{ osquery_local_deb }}"
+        checksum: "{{ osquery_deb_sha256 }}"
+        mode: "0644"
+
+- name: Install and verify osquery on Debian 12 targets
+  hosts: all
+  become: true
+  gather_facts: false
+  vars:
+    osquery_local_deb: "/tmp/osquery_5.24.0-1.linux_amd64.deb"
+    osquery_remote_deb: "/tmp/osquery_5.24.0-1.linux_amd64.deb"
+    osquery_deb_sha256_hex: "8ae0416d85336a1aea6883920ae9c2751a98538fe0bb624822e92934d3be5592"
+  tasks:
+    - name: Copy verified osquery .deb to target VM
+      ansible.builtin.copy:
+        src: "{{ osquery_local_deb }}"
+        dest: "{{ osquery_remote_deb }}"
+        mode: "0644"
+
+    - name: Verify SHA-256 checksum of copied .deb on target VM
+      ansible.builtin.stat:
+        path: "{{ osquery_remote_deb }}"
+        checksum_algorithm: sha256
+      register: remote_deb_stat
+
+    - name: Fail closed if remote SHA-256 checksum does not match
+      ansible.builtin.assert:
+        that:
+          - remote_deb_stat.stat.checksum == osquery_deb_sha256_hex
+        fail_msg: "Remote .deb SHA-256 mismatch: {{ remote_deb_stat.stat.checksum | default('missing') }}"
+
+    - name: Install osquery .deb via apt
+      ansible.builtin.apt:
+        deb: "{{ osquery_remote_deb }}"
+        state: present
+
+    - name: Verify osqueryi answers with Debian 12 release
+      ansible.builtin.command:
+        argv:
+          - osqueryi
+          - --json
+          - "SELECT name, version, major, minor FROM os_version;"
+      register: osquery_check
+      changed_when: false
+
+    - name: Assert guest OS is Debian 12
+      ansible.builtin.assert:
+        that:
+          - "'Debian' in osquery_check.stdout"
+          - "'\"major\":\"12\"' in (osquery_check.stdout | regex_replace('\\s+', ''))"
+        success_msg: "osqueryi verified: {{ osquery_check.stdout }}"
+        fail_msg: "Unexpected os_version output: {{ osquery_check.stdout }}"

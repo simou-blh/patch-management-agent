@@ -59,9 +59,9 @@ def test_all_requests_remain_blocked_and_recorded(tmp_path, plan, evidence, deci
 
 def test_kernel_is_deferred(plan, evidence):
     package = plan["packages"][0]
-    package["name"] = "linux-image-amd64"
-    evidence["vm-01"]["packages"][package["name"]] = {"installed": package["current_version"],
-                                                            "candidates": [package["proposed_version"]]}
+    package["name"] = "linux-image-amd64:amd64"
+    evidence["hosts"]["vm-01"]["packages"][package["name"]] = copy.deepcopy(
+        evidence["hosts"]["vm-01"]["packages"]["curl:amd64"])
     with pytest.raises(ValueError, match="kernel"):
         validate_plan(plan, evidence)
 
@@ -71,7 +71,6 @@ def test_plan_hash_ignores_object_key_order(plan):
 
 
 def test_evidence_cannot_expand_inventory_scope(plan, evidence):
-    evidence["unknown"] = evidence["vm-01"]
     plan["targets"].append("unknown")
-    with pytest.raises(ValueError, match="unknown target"):
+    with pytest.raises(ValueError, match="unknown inventory host"):
         validate_plan(plan, evidence)
