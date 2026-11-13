@@ -77,6 +77,7 @@ None of these values belong in Git or in model context.
 | `SEMAPHORE_ACCESS_KEY_ENCRYPTION` | `compose.yml`, service `semaphore` | Lab owner (Taha) | Required; 32 random bytes, base64. Generate with the command in `.env.example`. |
 | `SEMAPHORE_API_TOKEN` | `compose.yml`, profile `upstream` only | Lab owner (Taha) | Created in the Semaphore UI after first startup. Needed only to test the upstream MCP transport; never registered with OpenCode. |
 | `PATCH_AGENT_DATA_DIR` | MCP servers and operator CLI | Operator | Moves the state/evidence directory away from `data/`. Never a tool argument. `scripts/demo.py` uses it for its `data/demo-*` folders. |
+| `PATCH_AGENT_EVIDENCE_MAX_AGE_SECONDS` | Operator collector and `submit_plan` | Operator | Required positive integer. No default, and the model cannot choose it; import and plan submission are blocked without it. The team still has to agree the value (S1.2b). |
 | `UV_LINK_MODE` | uv | Optional | `copy` hides the hardlink warning on cross-filesystem installs. |
 | Model provider credentials | OpenCode `/connect` | Each developer | One provider only. Stored in OpenCode's local credential store, outside the repo. |
 
@@ -85,8 +86,9 @@ Other fixed local settings (committed, operator-owned, keep in sync):
 - `lab/hosts.json` and `inventory.ini`: `vm-01` canary `192.168.56.11`, `vm-02` fleet
   `192.168.56.12`, `vm-03` fleet `192.168.56.13`, user `vagrant`, keys under
   `~/.ssh/patch-lab/`.
-- `data/evidence.json`: manual, operator-created candidate evidence (format in
-  [interfaces.md](interfaces.md)) until the Sprint 1 collector replaces it.
+- `data/evidence.json`: written only by the operator collector
+  (`python -m patch_agent.collector EXPORT.json --targets vm-01 vm-02 vm-03`) from a
+  contract-v1 export; see [interfaces.md](interfaces.md).
 - Semaphore UI `http://localhost:3000`; optional upstream MCP `http://localhost:8500/mcp`.
 
 ## 6. Owners and reviewers
@@ -111,8 +113,8 @@ PR review; nothing here changes code.
 
 | # | Decision | Source | Confirm with |
 |---|---|---|---|
-| 1 | Evidence format is the versioned contract v1 ([evidence-contract.md](evidence-contract.md), S1.2a merged). The validator stands alone; `submit_plan` does not read it yet. | plan.md S1.2 | Abderaouf, Wassim, Baha |
-| 2 | Manual `data/evidence.json` stays the plan-validation input until Wassim's collector replaces it. No silent migration to the v1 envelope. | evidence-contract.md | Wassim |
+| 1 | Evidence format is the versioned contract v1 ([evidence-contract.md](evidence-contract.md), S1.2a merged). The operator importer and `submit_plan` consume it (PR #11); a Semaphore-run export is still pending. | plan.md S1.2 | Abderaouf, Wassim, Baha |
+| 2 | The plan-validation input is a v1 export imported by the operator collector into `data/evidence.json` (PR #11). The legacy manual map is rejected; no silent migration or invented timestamps. | evidence-contract.md | Wassim |
 | 3 | Inspection, preflight and verification templates are read-only; patch, verify and recover are simulate-only. Deployment_unblocked defaults to false. | plan.md section 1 | Abderaouf, Taha |
 | 4 | Template IDs are agreed between Taha and Abderaouf and recorded in an operator-owned mapping, not in model-visible config. | plan.md S1.2d, SETUP.md | Taha, Abderaouf |
 | 5 | Mocked/synthetic results and live results are recorded in separate places and never merged into one pass/fail claim. | Sprint 1 PDF (Dhia) | Dhia |
@@ -147,13 +149,14 @@ Get-ChildItem data -Directory | Sort-Object LastWriteTime | Select-Object -Last 
 The second command finds the newest `data/demo-*` folder, which holds the readable,
 schema-validated JSON reports. The demo output lines to point out, in order:
 
-1. `Unknown host rejected`: queries are refused before SSH.
-2. `Approval tool boundary`: the model has no approve/reject tool.
-3. `Invalid version rejected`: a version missing from trusted candidates is refused.
-4. `Plan submitted`: the plan is stored as pending with its SHA-256.
-5. `Unapproved deployment blocked`, `Operator CLI approval`, `Approved deployment blocked`.
-6. `Changed plan invalidates approval`, `Stale hash blocked`.
-7. `Operator rejection`, then `Report artifacts: 4 schema-validated JSON reports`.
+1. `Operator evidence import`: synthetic contract-v1 evidence is validated and published (not live evidence).
+2. `Unknown host rejected`: queries are refused before SSH.
+3. `Approval tool boundary`: the model has no approve/reject tool.
+4. `Invalid version rejected`: a version missing from trusted candidates is refused.
+5. `Plan submitted`: the plan is stored as pending with its SHA-256.
+6. `Unapproved deployment blocked`, `Operator CLI approval`, `Approved deployment blocked`.
+7. `Changed plan invalidates approval`, `Stale hash blocked`.
+8. `Operator rejection`, then `Report artifacts: 4 schema-validated JSON reports`.
 
 For a manual operator session against your own data directory (a plan must already be
 submitted and the hash reviewed):
