@@ -4,18 +4,21 @@
   "description": "Per-package advisory assessment of one evidence record. Schema validity does not establish that evidence or advisories are fresh or that a patch is approved.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "assessed_at", "evidence_collected_at", "advisory_fetched_at", "release", "results"],
+  "required": ["schema_version", "assessed_at", "evidence_collected_at", "evidence_sha256", "advisory_fetched_at", "advisory_cache_sha256", "release", "results"],
   "properties": {
     "schema_version": {"type": "integer", "const": 1},
     "assessed_at": {"$ref": "#/$defs/timestamp"},
     "evidence_collected_at": {"$ref": "#/$defs/timestamp"},
+    "evidence_sha256": {"$ref": "#/$defs/sha256"},
     "advisory_fetched_at": {"$ref": "#/$defs/timestamp"},
+    "advisory_cache_sha256": {"$ref": "#/$defs/sha256"},
     "release": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
     "results": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/result"}}
   },
   "$defs": {
     "text": {"type": "string", "minLength": 1, "pattern": "\\S"},
     "version": {"type": "string", "minLength": 1, "not": {"pattern": "\\s"}},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "timestamp": {
       "type": "string", "format": "date-time",
       "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,6})?Z$",
@@ -50,16 +53,17 @@
     },
     "decision": {
       "type": "object", "additionalProperties": false,
-      "required": ["action", "proposed_version", "priority", "reason"],
+      "required": ["action", "proposed_version", "proposed_source_version", "priority", "reason"],
       "properties": {
         "action": {"enum": ["patch", "defer"]},
         "proposed_version": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/version"}]},
+        "proposed_source_version": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/version"}]},
         "priority": {"$ref": "#/$defs/priority"},
         "reason": {"$ref": "#/$defs/text"}
       },
       "if": {"properties": {"action": {"const": "patch"}}},
-      "then": {"properties": {"proposed_version": {"type": "string"}}},
-      "else": {"properties": {"proposed_version": {"type": "null"}}}
+      "then": {"properties": {"proposed_version": {"type": "string"}, "proposed_source_version": {"type": "string"}}},
+      "else": {"properties": {"proposed_version": {"type": "null"}, "proposed_source_version": {"type": "null"}}}
     },
     "result": {
       "type": "object", "additionalProperties": false,
@@ -69,7 +73,7 @@
         "package": {"$ref": "#/$defs/package_id"},
         "installed": {"type": "string", "minLength": 1, "not": {"pattern": "\\s"}},
         "source": {"$ref": "#/$defs/source"},
-        "status": {"enum": ["affected", "fixed", "uncertain"]},
+        "status": {"enum": ["affected", "fixed", "uncertain", "no_known_advisory"]},
         "findings": {"type": "array", "items": {"$ref": "#/$defs/finding"}},
         "decision": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/decision"}]}
       }

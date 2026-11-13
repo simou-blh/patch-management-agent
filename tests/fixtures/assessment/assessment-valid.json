@@ -2,7 +2,9 @@
   "schema_version": 1,
   "assessed_at": "2026-10-30T09:30:00Z",
   "evidence_collected_at": "2026-10-30T09:00:02Z",
+  "evidence_sha256": "1dba422c9dead7c72a476b000e8369af3633fb2c599b1250ff5de61b6f0f5e96",
   "advisory_fetched_at": "2026-10-30T08:00:00Z",
+  "advisory_cache_sha256": "167862d030926ea2a8da9280dddd85740be0bb50ea366ad4e20a75daceab8ecf",
   "release": "bookworm",
   "results": [
     {
@@ -12,7 +14,7 @@
       "findings": [
         {"advisory_id": "CVE-2026-0001", "status": "affected", "fixed_version": "1:1.0-2", "urgency": "high", "reason": "installed_before_fix"}
       ],
-      "decision": {"action": "patch", "proposed_version": "1:1.0-2", "priority": "high", "reason": "Synthetic example: installable version resolves the advisory"}
+      "decision": {"action": "patch", "proposed_version": "1:1.0-2", "proposed_source_version": "1:1.0-2", "priority": "high", "reason": "Synthetic example: installable version resolves the advisory"}
     },
     {
       "host": "vm-02", "package": "demo-package:amd64", "installed": "1:1.0-2",
@@ -24,20 +26,27 @@
       "decision": null
     },
     {
+      "host": "vm-02", "package": "clean-package:amd64", "installed": "4.2-1",
+      "source": {"name": "clean-source", "version": "4.2-1"},
+      "status": "no_known_advisory",
+      "findings": [],
+      "decision": null
+    },
+    {
       "host": "vm-01", "package": "open-package:amd64", "installed": "2.0-1",
       "source": {"name": "open-source", "version": "2.0-1"},
       "status": "affected",
       "findings": [
         {"advisory_id": "CVE-2026-0002", "status": "affected", "fixed_version": null, "urgency": "low", "reason": "advisory_open"}
       ],
-      "decision": {"action": "defer", "proposed_version": null, "priority": "low", "reason": "Synthetic example: no fixed version published"}
+      "decision": {"action": "defer", "proposed_version": null, "proposed_source_version": null, "priority": "low", "reason": "Synthetic example: no fixed version published"}
     },
     {
       "host": "vm-01", "package": "mystery:amd64", "installed": "3.1-1",
       "source": null,
       "status": "uncertain",
       "findings": [],
-      "decision": {"action": "defer", "proposed_version": null, "priority": "medium", "reason": "Synthetic example: source package unknown, advisories cannot be matched"}
+      "decision": {"action": "defer", "proposed_version": null, "proposed_source_version": null, "priority": "medium", "reason": "Synthetic example: source package unknown, advisories cannot be matched"}
     }
   ]
 }
