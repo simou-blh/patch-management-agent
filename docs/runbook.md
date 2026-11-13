@@ -28,21 +28,24 @@ Do not install WSL, VirtualBox or Docker only to work on documentation.
 
 ## 3. Verified local commands (Windows PowerShell, repo root)
 
-Checked 2026-10-31 on Windows, Python 3.13.13 selected by uv, Git 2.51.2.
+Re-checked 2026-11-13 on Windows at `main` commit `4a9fd91`. The earlier
+2026-10-31 results (99 tests) are kept in [validation.md](validation.md).
 
 ```powershell
 uv sync
 uv run python -m pytest -q
+uv run python scripts/check_artifacts.py
 uv run python scripts/update_progress.py --check
 uv run python scripts/demo.py
 ```
 
 | Command | Result | Tag |
 |---|---|---|
-| `uv sync` | 36 packages installed into `.venv` | `VERIFIED-LOCAL` |
-| `uv run python -m pytest -q` | 99 passed | `VERIFIED-LOCAL` |
-| `uv run python scripts/update_progress.py --check` | "README sprint bars are current", exit code 0 | `VERIFIED-LOCAL` |
-| `uv run python scripts/demo.py` | All gates PASS; 4 schema-validated JSON reports under `data/demo-*` | `VERIFIED-LOCAL` |
+| `uv sync` | 38 packages resolved; 6 updated because `uv.lock` is not in Git | `VERIFIED-LOCAL` |
+| `uv run python -m pytest -q` | 344 passed, 400 skipped | `VERIFIED-LOCAL` |
+| `uv run python scripts/check_artifacts.py` | "All JSON/YAML artifacts passed." | `VERIFIED-LOCAL` |
+| `uv run python scripts/update_progress.py --check` | "README sprint bars are current." | `VERIFIED-LOCAL` |
+| `uv run python scripts/demo.py` | All gates PASS, starting with the contract-v1 evidence import; 4 schema-validated JSON reports under `data/demo-*` | `VERIFIED-LOCAL` |
 
 Notes:
 
@@ -50,6 +53,8 @@ Notes:
   the S1.1 owner; do not add it to unrelated PRs.
 - The `uv` hardlink warning on some drives is harmless; set `UV_LINK_MODE=copy` to hide it.
 - `scripts/check_env.sh` is bash and runs only in WSL.
+- The 400 skipped tests are the `dpkg --compare-versions` cross-checks. They need
+  Linux `dpkg`, so they are skipped on Windows and run in CI.
 
 ## 4. Expected noise in the synthetic demo
 
