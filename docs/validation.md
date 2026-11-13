@@ -138,3 +138,24 @@ does not authenticate a file's provenance; only import actual trusted observatio
 The team must agree the age limit before configuring the importer/MCP. Existing
 SQLite plans remain intact, legacy evidence needs explicit archival/recollection,
 and deployment remains blocked even after approval.
+
+## Update 2026-11-13 — Re-check at main 4a9fd91
+
+Re-checked on Windows at `main` commit `4a9fd91` (merge of PR #11 and the playbooks
+branch). `uv sync` resolved 38 packages and updated 6, because `uv.lock` is not in Git.
+Deployment remains blocked; no `plan.md` checkpoint is changed by this note.
+
+| Check | Command | Result | Tag |
+|---|---|---|---|
+| Test suite | `uv run python -m pytest -q` | **344 passed, 400 skipped** (28.66 s) | `VERIFIED-LOCAL` |
+| JSON/YAML artifact checks | `uv run python scripts/check_artifacts.py` | "All JSON/YAML artifacts passed." | `VERIFIED-LOCAL` |
+| Sprint progress bars | `uv run python scripts/update_progress.py --check` | "README sprint bars are current." | `VERIFIED-LOCAL` |
+| Synthetic demo | `uv run python scripts/demo.py` | All gates PASS, 4 schema-validated JSON reports | `VERIFIED-LOCAL` |
+
+The 400 skips are the `dpkg --compare-versions` cross-checks, which need Linux `dpkg`.
+The demo prints expected rejection messages on stderr (unknown host, unavailable
+version); PowerShell may show them as `NativeCommandError`. The run still ends with
+`Demo passed`. CI for this commit was not re-checked here.
+
+Live checks (SSH/osquery on the three VMs, Semaphore, canary patching, rollout,
+recovery) were not run and remain `PENDING-LIVE`.
