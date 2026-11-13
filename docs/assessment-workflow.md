@@ -42,7 +42,8 @@ evidence store or is connected to `submit_plan`. See `docs/assessment-contract.m
 
 `submit_plan` checks the plan schema and the candidate evidence. It rejects unknown hosts
 and packages, installed versions that differ from the evidence, patch versions that are not
-available candidates, duplicate package decisions, unsupported actions and kernel patches.
+available candidates, duplicate package decisions, unsupported actions, kernel patches,
+defer items with a proposed version, and targets without package decisions.
 It does not yet check CVEs, Debian version ordering, dependency changes, repository index
 freshness, service checks or recovery artifacts. The plan targets must equal the evidence
 targets. A valid plan is stored as pending with its canonical SHA-256. Changing the plan
@@ -83,7 +84,7 @@ Package item (all fields required):
 | `host` | string | |
 | `name` | string | use the architecture-qualified form such as `curl:amd64`, matching the evidence keys |
 | `current_version` | string | non-empty; must match the evidence |
-| `proposed_version` | string or null | non-empty if a string; the schema does not tie it to `action` |
+| `proposed_version` | string or null | non-empty if a string. The schema does not tie it to `action`, but `submit_plan` requires null for `defer` and an available candidate for `patch` |
 | `action` | enum | `patch` or `defer` |
 | `priority` | enum | `critical`, `high`, `medium`, `low` |
 | `advisories` | array of strings | each non-empty; may be empty |
