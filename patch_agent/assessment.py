@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 from jsonschema import Draft202012Validator, ValidationError
 
+from patch_agent.approval import canonical
 from patch_agent.debversion import is_fixed, parse_version
 
 SCHEMAS = Path(__file__).resolve().parent.parent / "schemas"
@@ -35,9 +36,8 @@ COMPARING_REASONS = ("installed_before_fix", "installed_at_or_after_fix")
 
 
 def canonical_sha256(document) -> str:
-    """SHA-256 of the canonical JSON (sorted keys, compact, UTF-8) of an input record."""
-    text = json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    """SHA-256 of an input record in the project's canonical JSON form (approval.canonical)."""
+    return hashlib.sha256(canonical(document).encode()).hexdigest()
 
 
 def _time(value: str) -> datetime:

@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from jsonschema import ValidationError
 
+from patch_agent.approval import plan_hash
 from patch_agent.assessment import (
     CONTRACT_ERRORS, canonical_sha256, validate_advisory_cache, validate_assessment_result)
 
@@ -64,6 +65,16 @@ def test_canonical_sha256():
     assert canonical_sha256({"a": 1, "b": [1, 2]}) == canonical_sha256({"b": [1, 2], "a": 1})
     assert canonical_sha256({"a": 1}) != canonical_sha256({"a": 2})
     assert len(canonical_sha256({})) == 64
+
+
+def test_canonical_sha256_matches_the_plan_hash_form():
+    document = {"b": "é", "a": [1, {"z": 1, "y": 2}]}
+    assert canonical_sha256(document) == plan_hash(document)
+
+
+def test_canonical_sha256_rejects_nan():
+    with pytest.raises(ValueError):
+        canonical_sha256({"a": float("nan")})
 
 
 def test_fixture_binds_to_the_cache_fixture(cache, assessment):

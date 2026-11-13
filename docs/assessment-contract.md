@@ -34,8 +34,9 @@ name. Each entry has `id`, `status` (`resolved`, `open`, `undetermined`),
 One record per assessed evidence collection, bound to its two inputs by timestamp and by
 digest: `evidence_collected_at` / `advisory_fetched_at` cannot be later than `assessed_at`,
 and `evidence_sha256` / `advisory_cache_sha256` are the SHA-256 of each input record's
-canonical JSON (sorted keys, compact separators, UTF-8), computed with
-`patch_agent.assessment.canonical_sha256`. Evidence v1 has no identifier of its own, so the
+canonical JSON, computed with `patch_agent.assessment.canonical_sha256`, which reuses
+the project's existing form (`patch_agent.approval.canonical`, also used for plan hashes:
+sorted keys, compact separators, ASCII-escaped, no NaN). Evidence v1 has no identifier of its own, so the
 digest is the binding; a consumer recomputes it to check which record was assessed.
 
 Each result is one `host` + architecture-qualified `package` (same IDs as
