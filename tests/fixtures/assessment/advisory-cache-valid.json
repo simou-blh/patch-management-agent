@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "fetched_at": "2026-10-30T08:00:00Z",
+  "source": {"name": "debian-security-tracker", "uri": "https://security-tracker.debian.org/tracker/data/json"},
+  "release": "bookworm",
+  "packages": {
+    "demo-source": [
+      {"id": "CVE-2026-0001", "status": "resolved", "fixed_version": "1:1.0-2", "urgency": "high"}
+    ],
+    "open-source": [
+      {"id": "CVE-2026-0002", "status": "open", "fixed_version": null, "urgency": "low"}
+    ],
+    "pending-source": [
+      {"id": "CVE-2026-0003", "status": "undetermined", "fixed_version": null, "urgency": "not yet assigned"}
+    ]
+  }
+}
