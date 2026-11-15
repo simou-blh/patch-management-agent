@@ -138,3 +138,35 @@ does not authenticate a file's provenance; only import actual trusted observatio
 The team must agree the age limit before configuring the importer/MCP. Existing
 SQLite plans remain intact, legacy evidence needs explicit archival/recollection,
 and deployment remains blocked even after approval.
+
+## Update 2026-11-15 (collector verification)
+
+Re-checked on Windows at `main` commit `c7ba285` with the repository's Python 3.12
+virtual environment. This records the S1.3 verification for the merged collector
+(PR #11). No live data is included and deployment stays blocked.
+
+| Check | Command | Result | Tag |
+|---|---|---|---|
+| Test suite | `python -m pytest -q` | **427 passed, 400 skipped** (62 s) | `VERIFIED-LOCAL` |
+| JSON/YAML artifact checks | `python scripts/check_artifacts.py` | "All JSON/YAML artifacts passed." | `VERIFIED-LOCAL` |
+| Sprint progress bars | `python scripts/update_progress.py --check` | "README sprint bars are current." | `VERIFIED-LOCAL` |
+| Whitespace errors | `git diff --check` | clean | `VERIFIED-LOCAL` |
+
+The 400 skips are the `dpkg --compare-versions` cross-checks, which need Linux `dpkg`;
+the Ubuntu CI runner executes them.
+
+The operator import path rejects stale, future-dated, incomplete and failed-host
+collections, legacy evidence maps, unrequested or unknown hosts, duplicate candidate
+versions and cross-architecture approvals, and blocks a missing or invalid
+`PATCH_AGENT_EVIDENCE_MAX_AGE_SECONDS`. Publication is locked, private and atomic, and
+an older collection cannot replace a newer one. `submit_plan` applies the same
+readiness checks before an approval is stored, so an approval cannot exist for evidence
+that would be rejected at submission. `tests/test_collector.py`,
+`tests/test_evidence_readiness.py` and `tests/test_collector_contract.py` cover these
+paths; the synthetic demo imports contract-v1 evidence before submitting plans.
+
+Correcting the 2026-11-07 note: `playbooks/inspect.yml` and
+`playbooks/library/inspect_packages.py` now emit the contract-v1 envelope, covered by
+`tests/test_inspect.py`. What is still pending is the live export from a Semaphore-run
+inspection (S1.2d/S1.5c) and the team's age-policy value (S1.2b), so no collected data
+is live evidence yet.
