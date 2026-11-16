@@ -139,34 +139,23 @@ The team must agree the age limit before configuring the importer/MCP. Existing
 SQLite plans remain intact, legacy evidence needs explicit archival/recollection,
 and deployment remains blocked even after approval.
 
-## Update 2026-11-15 (collector verification)
+## Update 2026-11-13 — Re-check at main 4a9fd91
 
-Re-checked on Windows at `main` commit `c7ba285` with the repository's Python 3.12
-virtual environment. This records the S1.3 verification for the merged collector
-(PR #11). No live data is included and deployment stays blocked.
+Re-checked on Windows at `main` commit `4a9fd91` (merge of PR #11 and the playbooks
+branch). `uv sync` resolved 38 packages and updated 6, because `uv.lock` is not in Git.
+Deployment remains blocked; no `plan.md` checkpoint is changed by this note.
 
 | Check | Command | Result | Tag |
 |---|---|---|---|
-| Test suite | `python -m pytest -q` | **427 passed, 400 skipped** (62 s) | `VERIFIED-LOCAL` |
-| JSON/YAML artifact checks | `python scripts/check_artifacts.py` | "All JSON/YAML artifacts passed." | `VERIFIED-LOCAL` |
-| Sprint progress bars | `python scripts/update_progress.py --check` | "README sprint bars are current." | `VERIFIED-LOCAL` |
-| Whitespace errors | `git diff --check` | clean | `VERIFIED-LOCAL` |
+| Test suite | `uv run python -m pytest -q` | **344 passed, 400 skipped** (28.66 s) | `VERIFIED-LOCAL` |
+| JSON/YAML artifact checks | `uv run python scripts/check_artifacts.py` | "All JSON/YAML artifacts passed." | `VERIFIED-LOCAL` |
+| Sprint progress bars | `uv run python scripts/update_progress.py --check` | "README sprint bars are current." | `VERIFIED-LOCAL` |
+| Synthetic demo | `uv run python scripts/demo.py` | All gates PASS, 4 schema-validated JSON reports | `VERIFIED-LOCAL` |
 
-The 400 skips are the `dpkg --compare-versions` cross-checks, which need Linux `dpkg`;
-the Ubuntu CI runner executes them.
+The 400 skips are the `dpkg --compare-versions` cross-checks, which need Linux `dpkg`.
+The demo prints expected rejection messages on stderr (unknown host, unavailable
+version); PowerShell may show them as `NativeCommandError`. The run still ends with
+`Demo passed`. CI for this commit was not re-checked here.
 
-The operator import path rejects stale, future-dated, incomplete and failed-host
-collections, legacy evidence maps, unrequested or unknown hosts, duplicate candidate
-versions and cross-architecture approvals, and blocks a missing or invalid
-`PATCH_AGENT_EVIDENCE_MAX_AGE_SECONDS`. Publication is locked, private and atomic, and
-an older collection cannot replace a newer one. `submit_plan` applies the same
-readiness checks before an approval is stored, so an approval cannot exist for evidence
-that would be rejected at submission. `tests/test_collector.py`,
-`tests/test_evidence_readiness.py` and `tests/test_collector_contract.py` cover these
-paths; the synthetic demo imports contract-v1 evidence before submitting plans.
-
-Correcting the 2026-11-07 note: `playbooks/inspect.yml` and
-`playbooks/library/inspect_packages.py` now emit the contract-v1 envelope, covered by
-`tests/test_inspect.py`. What is still pending is the live export from a Semaphore-run
-inspection (S1.2d/S1.5c) and the team's age-policy value (S1.2b), so no collected data
-is live evidence yet.
+Live checks (SSH/osquery on the three VMs, Semaphore, canary patching, rollout,
+recovery) were not run and remain `PENDING-LIVE`.
