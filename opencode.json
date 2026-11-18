@@ -5,7 +5,7 @@
     {
       "action": "*",
       "resource": "*",
-      "effect": "deny"
+      "effect": "allow"
     },
     {
       "action": "fleet_*",

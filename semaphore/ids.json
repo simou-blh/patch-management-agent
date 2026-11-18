@@ -1,7 +1,7 @@
 {
   "status": "operator-owned Semaphore binding; runtime IDs only; no secrets",
   "project_id": 1,
-  "key_id": 2,
+  "key_id": 1,
   "inventory_id": 1,
   "repository_id": 1,
   "templates": {
