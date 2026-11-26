@@ -101,6 +101,8 @@ Current producer limitations, to resolve before assessment integration:
 - Versions are recorded as strings; assessment must apply Debian ordering.
 - The producer has parser/contract tests and a contract-valid read-only run on
   vm-01/vm-02/vm-03 from WSL; a Semaphore-run inspection job is still pending.
+- Because candidate `source` is `null`, an assessment cannot take a candidate's
+  source version from evidence (open question in assessment-workflow.md section 5).
 
 ## Compatibility and next boundary
 
@@ -140,9 +142,6 @@ occurs. Existing plans/decisions remain stored and all deployment stays blocked.
 Passing `validate_evidence_contract` does **not** establish trusted provenance, authorized inventory
 membership, freshness, complete inspection coverage, advisory correctness or patch
 eligibility. Old/future collections and failed-host diagnostic records can be structurally
-valid. Readiness is rechecked at each import and plan submission. Producer integration
-is still pending: `inspect.yml` must emit the agreed contract and the team must verify
-the trusted Semaphore export/transport against the real three-host lab. The importer
-does not establish provenance merely by accepting a structurally valid file.
+valid. Readiness is rechecked at each import and plan submission. Producer integration is partly done: `inspect.yml` emits the contract. The team must still verify the trusted Semaphore export/transport against the real three-host lab.
 
 Validation uses the project's existing [jsonschema validator pattern](https://python-jsonschema.readthedocs.io/en/stable/validate/).

@@ -17,7 +17,8 @@ before live execution is enabled.
 
 Plan submission requires the [versioned evidence contract](evidence-contract.md).
 Legacy host/package maps are rejected; timestamps or architectures are never guessed.
-`playbooks/inspect.yml` emits this contract.
+`playbooks/inspect.yml` emits this contract (a read-only run from WSL was
+contract-valid; a Semaphore-run export is still pending).
 
 - `submit_plan(plan)` validates `schemas/plan.schema.json` plus candidate evidence,
   then stores the proposal in the local SQLite store.
@@ -40,7 +41,7 @@ The command validates before atomically publishing `data/evidence.json`; it does
 not query hosts, start Semaphore tasks, parse raw job logs or authenticate the export's
 origin. The producer must supply actual observations, candidate/source/origin fields
 and original UTC timestamps. Synthetic/model-authored records are not live evidence.
-The current inspection playbook does not yet produce this export.
+A Semaphore-run export from the real lab is still pending.
 
 Import and every plan submission require `PATCH_AGENT_EVIDENCE_MAX_AGE_SECONDS`
 in the process environment, set by the operator to a positive integer. There is no
@@ -66,6 +67,14 @@ execution. Status/approval records are historical decisions, not a freshness gua
 the future executor must revalidate evidence and scope before any mutation.
 Preflight readiness is a separate v1 contract and is not yet consumed by
 submission or execution.
+
+## Advisory cache and assessment contracts
+
+Validators only: `patch_agent/assessment.py` and
+[assessment-contract.md](assessment-contract.md). Nothing fetches advisory data,
+reads the evidence store or feeds `submit_plan`. Matching (S2.2) and plan
+generation are not implemented. Which MCP server will expose assessment is
+undecided; see [assessment-workflow.md](assessment-workflow.md) section 5.
 
 ## Preflight readiness
 
@@ -130,6 +139,9 @@ three stay behind fail gates until deployment is unblocked:
 All three run in read-only simulate mode by default (`deployment_unblocked`
 defaults to `false`). The apply/restart path is gated behind that flag and
 cannot be reached while the foundation keeps deployment blocked.
+
+Result contracts for Sprint 3 are summarized in [sprint3-contracts.md](sprint3-contracts.md).
+
 
 ## Sequential fleet rollout
 
