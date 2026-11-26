@@ -170,3 +170,38 @@ Correcting the 2026-11-07 note: `playbooks/inspect.yml` and
 `tests/test_inspect.py`. What is still pending is the live export from a Semaphore-run
 inspection (S1.2d/S1.5c) and the team's age-policy value (S1.2b), so no collected data
 is live evidence yet.
+
+## Update 2026-11-22 (advisory and assessment contract verification)
+
+Re-checked on Ubuntu 22.04 (WSL2) at `main` commit `83d5881` with a uv-managed Python
+3.15.2 environment. This records the S1.4b and S1.4c verification for the merged
+advisory-cache and assessment-result contracts (PR #7). No live data is included and
+deployment stays blocked.
+
+| Check | Command | Result | Tag |
+|---|---|---|---|
+| Test suite | `uv run python -m pytest -q` | **827 passed** (7 s) | `VERIFIED-LOCAL` |
+| Contract and version tests | `uv run python -m pytest tests/test_assessment.py tests/test_debversion.py tests/test_debversion_dpkg.py -q -rs` | **515 passed, none skipped** | `VERIFIED-LOCAL` |
+| JSON/YAML artifact checks | `uv run python scripts/check_artifacts.py` | "All JSON/YAML artifacts passed." | `VERIFIED-LOCAL` |
+| Sprint progress bars | `uv run python scripts/update_progress.py --check` | "README sprint bars are current." | `VERIFIED-LOCAL` |
+| Whitespace errors | `git diff --check` | clean | `VERIFIED-LOCAL` |
+
+Unlike the Windows run recorded above, this run had Linux `dpkg` (1.21.1), so the 400
+`dpkg --compare-versions` cross-checks executed instead of being skipped.
+
+The advisory-cache validator rejects unknown fields, a `resolved` advisory without a
+fixed version, an `open` or `undetermined` one with a fixed version, unparseable fixed
+versions, duplicate advisory ids, impossible timestamps, and source URIs with
+credentials, a query or a fragment. The assessment validator rejects findings whose
+reason contradicts their status or the Debian ordering of the source version, results
+whose status does not follow their findings, unparseable versions without a
+`version_invalid` finding, patch decisions that do not resolve every affected finding or
+that sit beside an uncertain finding, and records assessed before their inputs. Versions
+are compared on the source package version, and inputs are bound by digests that reuse
+`approval.canonical`. `tests/test_assessment.py` covers these paths with synthetic
+fixtures in `tests/fixtures/assessment`.
+
+Not yet done: the contracts are not read by `submit_plan` or any tool, the evidence digest
+in the example is illustrative, and deriving `priority` from advisory urgency is left to
+Sprint 2 (S2.2). The vulnerable-package fixture specification (S1.4d) is still pending, so
+S1.4 itself stays unchecked.
