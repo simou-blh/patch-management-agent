@@ -1,6 +1,6 @@
 # Assessment-to-approval workflow
 
-Sprint 2 documentation draft. It describes what exists on `main` at commit `4a9fd91`
+Sprint 2 documentation draft. It describes what exists on main on 2026-11-26
 and marks what does not exist yet. Deployment stays blocked for every plan. This page
 does not tick any `plan.md` checkpoint.
 
@@ -101,7 +101,7 @@ Package item (all fields required):
 | `decision.action` | `action` |
 | `decision.priority` | `priority` |
 | `decision.reason` | `reason` |
-| finding ids | `advisories` |
+| findings[].advisory_id | `advisories` |
 
 An assessment does not provide `run_id`, `targets`, `canary`, `verification` or `recovery`.
 
@@ -117,6 +117,10 @@ candidate-source problem (fixed versions are source versions and the decision ca
 2. Plan targets must equal the evidence targets, but an assessment only lists hosts that have results.
 3. `packages` needs at least one item, so a fleet with nothing to patch has no valid plan.
 4. Nothing links a submitted plan back to an assessment.
+5. Candidate source: evidence candidates carry `source: null`, so `proposed_source_version` cannot come from evidence. Does the producer fill it, or does the assessor derive it?
+6. `release`: evidence has no release field. Who checks that the hosts run the release of the advisory cache?
+7. `canary`: is it checked against `targets` and against the operator-configured canary?
+8. Which MCP server exposes assessment, given that only two facade servers are allowed?
 
 ## 6. Verified today
 
