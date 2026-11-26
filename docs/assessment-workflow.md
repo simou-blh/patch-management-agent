@@ -122,6 +122,8 @@ candidate-source problem (fixed versions are source versions and the decision ca
 7. `canary`: is it checked against `targets` and against the operator-configured canary?
 8. Which MCP server exposes assessment, given that only two facade servers are allowed?
 
+Proposed answers to these questions: [open-questions-proposals.md](open-questions-proposals.md).
+
 ## 6. Verified today
 
 The synthetic demo and the test suite exercise stages 2, 4, 5 and 6 with synthetic
