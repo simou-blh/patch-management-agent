@@ -26,7 +26,7 @@ recovery prerequisites are verified; deployment stays blocked.
 |---|---|
 | Assessment-to-approval workflow and exact plan fields | [assessment-workflow.md](assessment-workflow.md), merged (PR #13) |
 | Patch/defer examples with sanitized reasons | [plan-examples.md](plan-examples.md), merged (PR #14). Synthetic, taken from the demo plan; not from a real assessment |
-| Fixture setup, reset and recovery prerequisites | Requirements only, in runbook section 8.3. Waiting for the fixture and reset steps from the S2.1 owner |
+| Fixture setup, reset and recovery prerequisites | Template in [fixture-setup.md](fixture-setup.md) (PR #22); values pending from the S2.1 owner. Requirements are in runbook section 8.3 |
 | Interface consistency review | Done 2026-11-26 for `interfaces.md`, `assessment-contract.md`, `evidence-contract.md` and `plan.schema.json`. Fixes in PR #21; open questions in `assessment-workflow.md` section 5 |
 
 The two new documents are linked above.
