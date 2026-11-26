@@ -5,7 +5,7 @@ and marks what does not exist yet. Deployment stays blocked for every plan. This
 does not tick any `plan.md` checkpoint.
 
 Sources: [interfaces.md](interfaces.md), [evidence-contract.md](evidence-contract.md),
-`schemas/plan.schema.json`, and PR #7 (open, not merged).
+`schemas/plan.schema.json`, and the merged PR #7.
 
 ## 1. The flow
 
@@ -13,7 +13,7 @@ Sources: [interfaces.md](interfaces.md), [evidence-contract.md](evidence-contrac
 |---|---|---|---|
 | 1 | Inspect the hosts with the fixed read-only `playbooks/inspect.yml` | Operator | Emits contract v1. A read-only run on vm-01, vm-02 and vm-03 from WSL was verified outside Semaphore; the Semaphore-run export is pending. |
 | 2 | Import the export with `python -m patch_agent.collector` | Operator | Implemented (PR #11). |
-| 3 | Assess advisories against the evidence | Baha | Not implemented. Contracts are proposed in PR #7 (open); matching is S2.2. |
+| 3 | Assess advisories against the evidence | Baha | Not implemented. Contracts are merged (PR #7); matching is S2.2. |
 | 4 | Submit a plan with `submit_plan` | Model, through the approval MCP | Implemented. |
 | 5 | Review and decide with `python -m patch_agent.operator` | Human operator | Implemented. |
 | 6 | Request deployment with `request_deployment` | Model | Always returns a blocked report; no job starts. |
@@ -33,10 +33,10 @@ not prove where the file came from.
 
 ### 2.2 Assessment (proposed)
 
-PR #7 proposes two contracts: an advisory cache keyed by Debian source package, and an
+PR #7 added two contracts: an advisory cache keyed by Debian source package, and an
 assessment result with one record per host and package. Each record holds findings and a
 decision, `patch` or `defer`. These are validators only: nothing fetches data, reads the
-evidence store or is connected to `submit_plan`. See `docs/assessment-contract.md` in that PR.
+evidence store or is connected to `submit_plan`. See [assessment-contract.md](assessment-contract.md).
 
 ### 2.3 Plan submission
 
@@ -108,16 +108,18 @@ An assessment does not provide `run_id`, `targets`, `canary`, `verification` or 
 ## 5. Open questions
 
 Raised in the PR #7 review; to settle with Baha and Wassim before plan generation is built.
+Two of the original six were settled by the PR #7 review commits and are removed here:
+recording "assessed, no advisory known" (the `no_known_advisory` finding), and the
+candidate-source problem (fixed versions are source versions and the decision carries a
+`proposed_source_version`, which is what is compared).
 
 1. Who fills `verification` and `recovery`? S2.3 binds configured policies into plans.
 2. Plan targets must equal the evidence targets, but an assessment only lists hosts that have results.
 3. `packages` needs at least one item, so a fleet with nothing to patch has no valid plan.
-4. How to record "assessed, no advisory known": PR #7 rejects a known source package with no findings.
-5. Nothing links a submitted plan back to an assessment.
-6. The candidate `source` is null in the current producer, so a candidate binary version is compared with a source fixed version without knowing the candidate's source.
+4. Nothing links a submitted plan back to an assessment.
 
 ## 6. Verified today
 
 The synthetic demo and the test suite exercise stages 2, 4, 5 and 6 with synthetic
-evidence only; see [runbook.md](runbook.md) section 8.1 for the demo. Sanitized plan examples with patch and defer reasons
-are not written yet.
+evidence only; see [runbook.md](runbook.md) section 8.1 for the demo. Sanitized plan
+examples with patch and defer reasons are in [plan-examples.md](plan-examples.md).
