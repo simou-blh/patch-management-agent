@@ -15,6 +15,7 @@ services:
     volumes:
       - semaphore_config:/etc/semaphore
       - semaphore_tmp:/tmp/semaphore
+      - ./lab/semaphore_known_hosts:/home/semaphore/.ssh/known_hosts:ro 
 
   # Opt in only to test the upstream transport. Never register it in OpenCode.
   semaphore-mcp:

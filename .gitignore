@@ -230,4 +230,5 @@ noyau-local/
 *.box
 *.pem
 *.key
+lab/semaphore_known_hosts
 __temp__/
