@@ -28,21 +28,24 @@ Do not install WSL, VirtualBox or Docker only to work on documentation.
 
 ## 3. Verified local commands (Windows PowerShell, repo root)
 
-Checked 2026-10-31 on Windows, Python 3.13.13 selected by uv, Git 2.51.2.
+Re-checked 2026-11-13 on Windows at `main` commit `4a9fd91`. The earlier
+2026-10-31 results (99 tests) are kept in [validation.md](validation.md).
 
 ```powershell
 uv sync
 uv run python -m pytest -q
+uv run python scripts/check_artifacts.py
 uv run python scripts/update_progress.py --check
 uv run python scripts/demo.py
 ```
 
 | Command | Result | Tag |
 |---|---|---|
-| `uv sync` | 36 packages installed into `.venv` | `VERIFIED-LOCAL` |
-| `uv run python -m pytest -q` | 99 passed | `VERIFIED-LOCAL` |
-| `uv run python scripts/update_progress.py --check` | "README sprint bars are current", exit code 0 | `VERIFIED-LOCAL` |
-| `uv run python scripts/demo.py` | All gates PASS; 4 schema-validated JSON reports under `data/demo-*` | `VERIFIED-LOCAL` |
+| `uv sync` | 38 packages resolved; 6 updated because `uv.lock` is not in Git | `VERIFIED-LOCAL` |
+| `uv run python -m pytest -q` | 344 passed, 400 skipped | `VERIFIED-LOCAL` |
+| `uv run python scripts/check_artifacts.py` | "All JSON/YAML artifacts passed." | `VERIFIED-LOCAL` |
+| `uv run python scripts/update_progress.py --check` | "README sprint bars are current." | `VERIFIED-LOCAL` |
+| `uv run python scripts/demo.py` | All gates PASS, starting with the contract-v1 evidence import; 4 schema-validated JSON reports under `data/demo-*` | `VERIFIED-LOCAL` |
 
 Notes:
 
@@ -50,6 +53,8 @@ Notes:
   the S1.1 owner; do not add it to unrelated PRs.
 - The `uv` hardlink warning on some drives is harmless; set `UV_LINK_MODE=copy` to hide it.
 - `scripts/check_env.sh` is bash and runs only in WSL.
+- The 400 skipped tests are the `dpkg --compare-versions` cross-checks. They need
+  Linux `dpkg`, so they are skipped on Windows and run in CI.
 
 ## 4. Expected noise in the synthetic demo
 
@@ -72,6 +77,7 @@ None of these values belong in Git or in model context.
 | `SEMAPHORE_ACCESS_KEY_ENCRYPTION` | `compose.yml`, service `semaphore` | Lab owner (Taha) | Required; 32 random bytes, base64. Generate with the command in `.env.example`. |
 | `SEMAPHORE_API_TOKEN` | `compose.yml`, profile `upstream` only | Lab owner (Taha) | Created in the Semaphore UI after first startup. Needed only to test the upstream MCP transport; never registered with OpenCode. |
 | `PATCH_AGENT_DATA_DIR` | MCP servers and operator CLI | Operator | Moves the state/evidence directory away from `data/`. Never a tool argument. `scripts/demo.py` uses it for its `data/demo-*` folders. |
+| `PATCH_AGENT_EVIDENCE_MAX_AGE_SECONDS` | Operator collector and `submit_plan` | Operator | Required positive integer. No default, and the model cannot choose it; import and plan submission are blocked without it. The team still has to agree the value (S1.2b). |
 | `UV_LINK_MODE` | uv | Optional | `copy` hides the hardlink warning on cross-filesystem installs. |
 | Model provider credentials | OpenCode `/connect` | Each developer | One provider only. Stored in OpenCode's local credential store, outside the repo. |
 
@@ -80,8 +86,9 @@ Other fixed local settings (committed, operator-owned, keep in sync):
 - `lab/hosts.json` and `inventory.ini`: `vm-01` canary `192.168.56.11`, `vm-02` fleet
   `192.168.56.12`, `vm-03` fleet `192.168.56.13`, user `vagrant`, keys under
   `~/.ssh/patch-lab/`.
-- `data/evidence.json`: manual, operator-created candidate evidence (format in
-  [interfaces.md](interfaces.md)) until the Sprint 1 collector replaces it.
+- `data/evidence.json`: written only by the operator collector
+  (`python -m patch_agent.collector EXPORT.json --targets vm-01 vm-02 vm-03`) from a
+  contract-v1 export; see [interfaces.md](interfaces.md).
 - Semaphore UI `http://localhost:3000`; optional upstream MCP `http://localhost:8500/mcp`.
 
 ## 6. Owners and reviewers
@@ -106,8 +113,8 @@ PR review; nothing here changes code.
 
 | # | Decision | Source | Confirm with |
 |---|---|---|---|
-| 1 | Evidence format is the versioned contract v1 ([evidence-contract.md](evidence-contract.md), S1.2a merged). The validator stands alone; `submit_plan` does not read it yet. | plan.md S1.2 | Abderaouf, Wassim, Baha |
-| 2 | Manual `data/evidence.json` stays the plan-validation input until Wassim's collector replaces it. No silent migration to the v1 envelope. | evidence-contract.md | Wassim |
+| 1 | Evidence format is the versioned contract v1 ([evidence-contract.md](evidence-contract.md), S1.2a merged). The operator importer and `submit_plan` consume it (PR #11); a Semaphore-run export is still pending. | plan.md S1.2 | Abderaouf, Wassim, Baha |
+| 2 | The plan-validation input is a v1 export imported by the operator collector into `data/evidence.json` (PR #11). The legacy manual map is rejected; no silent migration or invented timestamps. | evidence-contract.md | Wassim |
 | 3 | Inspection, preflight and verification templates are read-only; patch, verify and recover are simulate-only. Deployment_unblocked defaults to false. | plan.md section 1 | Abderaouf, Taha |
 | 4 | Template IDs are agreed between Taha and Abderaouf and recorded in an operator-owned mapping, not in model-visible config. | plan.md S1.2d, SETUP.md | Taha, Abderaouf |
 | 5 | Mocked/synthetic results and live results are recorded in separate places and never merged into one pass/fail claim. | Sprint 1 PDF (Dhia) | Dhia |
@@ -142,13 +149,14 @@ Get-ChildItem data -Directory | Sort-Object LastWriteTime | Select-Object -Last 
 The second command finds the newest `data/demo-*` folder, which holds the readable,
 schema-validated JSON reports. The demo output lines to point out, in order:
 
-1. `Unknown host rejected`: queries are refused before SSH.
-2. `Approval tool boundary`: the model has no approve/reject tool.
-3. `Invalid version rejected`: a version missing from trusted candidates is refused.
-4. `Plan submitted`: the plan is stored as pending with its SHA-256.
-5. `Unapproved deployment blocked`, `Operator CLI approval`, `Approved deployment blocked`.
-6. `Changed plan invalidates approval`, `Stale hash blocked`.
-7. `Operator rejection`, then `Report artifacts: 4 schema-validated JSON reports`.
+1. `Operator evidence import`: synthetic contract-v1 evidence is validated and published (not live evidence).
+2. `Unknown host rejected`: queries are refused before SSH.
+3. `Approval tool boundary`: the model has no approve/reject tool.
+4. `Invalid version rejected`: a version missing from trusted candidates is refused.
+5. `Plan submitted`: the plan is stored as pending with its SHA-256.
+6. `Unapproved deployment blocked`, `Operator CLI approval`, `Approved deployment blocked`.
+7. `Changed plan invalidates approval`, `Stale hash blocked`.
+8. `Operator rejection`, then `Report artifacts: 4 schema-validated JSON reports`.
 
 For a manual operator session against your own data directory (a plan must already be
 submitted and the hash reviewed):
@@ -204,7 +212,7 @@ scenario table in [plan.md](../plan.md). None runs against a real lab yet.
 | 7 | Debian version helpers are merged in [PR #6](https://github.com/simou-blh/patch-management-agent/pull/6); advisory/assessment contracts and matching remain pending. | Baha | S1.4a records helper verification; remaining contracts/fixtures belong to Sprint 1, matching to Sprint 2. |
 | 8 | Box availability: the pinned Bento version must still be downloadable when the lab is built, and its real size is unmeasured. | Taha | Check before downloading; see [download-budget.md](download-budget.md). |
 | 9 | **Resolved:** verification results are dated and installed-tool notes identify the original machine. | Ahmed | [PR #5](https://github.com/simou-blh/patch-management-agent/pull/5) merged on 2026-11-04; the original validation record remains preserved. |
-| 10 | `scripts/check_env.sh` is bash and only runs in WSL, so Windows-only machines cannot run it. | Dhia | Record live check results from the lab machine. |
+| 10 | `scripts/check_env.sh` is bash and only runs in WSL. `scripts/check_env.py` is the Python equivalent: by default it checks tools, and with `--live` it also checks Docker, Ansible, osquery, SSH and Semaphore. Whether `--live` passes on the lab machine is not recorded yet. | Dhia | Record live check results from the lab machine. |
 | 11 | Preflight has parser/contract tests but has not run against the live lab; backup roots, configuration paths and recovery artifacts are operator-supplied. | Abderaouf | S2.4; a real run must prove a ready host and a blocked host. |
 | 12 | Patch, verify and recovery playbooks are implemented in simulate mode only; `deployment_unblocked` defaults to false. Live patching, service restarts and recovery on the real lab are pending. | Abderaouf | S3.2 and S3.3; requires live lab and approved canary. |
 | 13 | The five fixed playbooks ran read-only on vm-01/vm-02/vm-03; the sequential rollout coordinator (Baha) and live fleet rollout are pending. `deployment_unblocked` defaults to false. | Abderaouf, Baha | S4.1; requires live lab, Semaphore templates and approved canary. |
