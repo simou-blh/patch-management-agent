@@ -171,6 +171,26 @@ def test_systemd_health_is_skipped_when_blocked():
     assert "blocked" in result["detail"]
 
 
+def test_systemd_health_reports_timeout(monkeypatch):
+    def fake_run(command, **kwargs):
+        raise verify_module.subprocess.TimeoutExpired(command, 30)
+
+    monkeypatch.setattr(verify_module.subprocess, "run", fake_run)
+    result = verify_module.check_systemd_health("ssh", "ssh.service", True, check_mode=False)
+    assert result["status"] == "error"
+    assert "timed out" in result["detail"]
+
+
+def test_systemd_health_reports_probe_failure(monkeypatch):
+    def fake_run(command, **kwargs):
+        raise OSError("systemctl unavailable")
+
+    monkeypatch.setattr(verify_module.subprocess, "run", fake_run)
+    result = verify_module.check_systemd_health("ssh", "ssh.service", True, check_mode=False)
+    assert result["status"] == "error"
+    assert result["detail"] == "OSError"
+
+
 def test_run_health_checks_rejects_unknown_type():
     checks = verify_module.run_health_checks(
         "svc", {"health_checks": [{"type": "bogus"}]}, False, True,

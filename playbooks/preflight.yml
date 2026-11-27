@@ -17,6 +17,7 @@
         recovery_artifact_dir: "{{ preflight_recovery_artifact_dir | default(omit) }}"
         recovery_artifacts: "{{ preflight_recovery_artifacts | default([]) }}"
         cache_previous: "{{ preflight_cache_previous | default(false) }}"
+        cache_packages: "{{ preflight_cache_packages | default(omit) }}"
       register: preflight_result
       ignore_unreachable: true
       failed_when: false

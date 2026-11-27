@@ -252,3 +252,67 @@ def test_restore_config_backup_copies_and_verifies(tmp_path):
     result = recover_module.restore_config_backup(str(target), str(backup), True, False)
     assert result["result"] == "succeeded"
     assert target.read_text() == "Port 22\n"
+
+
+def test_restore_previous_packages_uses_one_transaction(monkeypatch):
+    u5 = "1:9.2p1-2+deb12u5"
+    sim = "".join(f"Inst {n} [1:9.2p1-2+deb12u7] ({u5} Debian-Security:12 [amd64])\n"
+                  for n in ("openssh-client", "openssh-server"))
+    calls = _fake_apt(monkeypatch, [(0, sim), (0, "done")], installed=u5)
+    entries = [{"name": n, "previous_version": u5, "architecture": "amd64"}
+               for n in ("openssh-server", "openssh-client")]
+    records = recover_module.restore_previous_packages(entries, True, False)
+    apt_calls = [c for c in calls if c[0] == "apt-get"]
+    assert len(apt_calls) == 2  # one simulation, one real run, for both packages
+    assert f"openssh-server:amd64={u5}" in apt_calls[1] and f"openssh-client:amd64={u5}" in apt_calls[1]
+    assert [r["result"] for r in records] == ["succeeded", "succeeded"]
+
+
+def test_restore_previous_packages_refuses_unlisted_change(monkeypatch):
+    sim = "Inst libssl3 [3.0.15-1] (3.0.11-1 Debian:12 [amd64])\n"
+    calls = _fake_apt(monkeypatch, [(0, sim)])
+    entries = [{"name": "openssh-server", "previous_version": "1:9.2p1-2+deb12u5", "architecture": "amd64"}]
+    records = recover_module.restore_previous_packages(entries, True, False)
+    assert len(calls) == 1 and records[0]["result"] == "failed"
+    assert "unapproved package libssl3" in records[0]["detail"]
+
+
+DIAG_BROKEN = {"dpkg_audit": {"issues": 4}, "apt_policy": {}, "service_status": {}}
+REPAIR_OK = {"attempted": True, "command": "apt-get install -f -y", "dry_run": False,
+             "result": "succeeded", "detail": "ok"}
+
+
+def test_successful_repair_clears_manual_intervention():
+    # Found live: diagnostics run before the repair must not force manual intervention.
+    assert recover_module.needs_manual_intervention(DIAG_BROKEN, REPAIR_OK, [], [], 0) is False
+
+
+def test_issues_left_after_repair_need_manual_intervention():
+    assert recover_module.needs_manual_intervention(DIAG_BROKEN, REPAIR_OK, [], [], 2) is True
+
+
+def test_blocked_recovery_with_broken_state_needs_manual_intervention():
+    repair = {"attempted": False, "result": "not_attempted"}
+    assert recover_module.needs_manual_intervention(DIAG_BROKEN, repair, [], [], None) is True
+
+
+def test_failed_restore_needs_manual_intervention():
+    failed = [{"result": "failed"}]
+    assert recover_module.needs_manual_intervention({"dpkg_audit": {"issues": 0}}, REPAIR_OK, failed, [], 0) is True
+
+
+def test_contract_accepts_repaired_host_record():
+    record = recover_module.host_result(DIAG_BROKEN, REPAIR_OK, [], [], manual_intervention=False)
+    assert validate_recover_contract(envelope(record)) is None
+
+
+def test_contract_accepts_manual_when_audit_issues_remain():
+    record = recover_module.host_result(DIAG_BROKEN, REPAIR_OK, [], [], manual_intervention=True)
+    assert validate_recover_contract(envelope(record)) is None
+
+
+def test_contract_rejects_manual_without_any_reason():
+    diagnostics = {"dpkg_audit": {"issues": 0}, "apt_policy": {}, "service_status": {}}
+    record = recover_module.host_result(diagnostics, REPAIR_OK, [], [], manual_intervention=True)
+    with pytest.raises(ValueError, match="without a failure"):
+        validate_recover_contract(envelope(record))

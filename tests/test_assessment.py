@@ -277,3 +277,53 @@ def test_mixed_resolved_and_open_findings_must_defer(assessment):
 def test_all_clean_assessment_is_explicit(assessment):
     assessment["results"] = [assessment["results"][CLEAN]]
     validate_assessment_result(assessment)
+
+
+# ---- Debian epochs and revisions -------------------------------------------
+
+def test_revision_suffix_decides_the_source_comparison(assessment):
+    result = assessment["results"][PATCH]
+    result["installed"] = "1:1.0-1+deb12u1"
+    result["source"]["version"] = "1:1.0-1+deb12u1"
+    result["findings"][0]["fixed_version"] = "1:1.0-1+deb12u2"
+    validate_assessment_result(assessment)
+
+    result["decision"] = patch_to("1:1.0-1+deb12u2")
+    validate_assessment_result(assessment)
+
+    # The installed revision is not the fixed revision: patching to it must defer.
+    result["decision"] = patch_to("1:1.0-1+deb12u1")
+    with pytest.raises(ValueError, match="does not resolve"):
+        validate_assessment_result(assessment)
+
+
+def test_tilde_source_version_is_before_the_fix(assessment):
+    result = assessment["results"][PATCH]
+    result["installed"] = "1:1.0-1~bpo12+1"
+    result["source"]["version"] = "1:1.0-1~bpo12+1"
+    result["findings"][0]["fixed_version"] = "1:1.0-1"
+    validate_assessment_result(assessment)
+
+    # A tilde version sorts before the fixed version, so it cannot be "fixed".
+    result["findings"][0].update(status="fixed", reason="installed_at_or_after_fix")
+    result["status"] = "fixed"
+    result["decision"] = None
+    with pytest.raises(ValueError, match="source version is before the fix"):
+        validate_assessment_result(assessment)
+
+
+def test_binary_epoch_does_not_override_the_source_comparison(assessment):
+    # The binary package has a much higher epoch, but advisories compare source versions.
+    result = assessment["results"][PATCH]
+    result["installed"] = "9:0.1-1"
+    validate_assessment_result(assessment)
+
+    result["decision"] = patch_to("9:0.1-2", "1:1.0-2")
+    validate_assessment_result(assessment)
+
+
+def test_epoch_zero_equals_a_missing_epoch_in_assessment(assessment):
+    result = assessment["results"][FIXED]
+    result["source"]["version"] = "0:1.0-2"
+    result["findings"][0]["fixed_version"] = "1.0-2"
+    validate_assessment_result(assessment)

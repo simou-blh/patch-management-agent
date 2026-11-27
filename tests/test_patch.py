@@ -300,3 +300,108 @@ def test_patch_playbook_gate_catches_module_error():
     play = load_playbook("patch.yml")[0]
     gate = next(t for t in play["tasks"] if "canary package failed" in str(t))
     assert "host_patch.error is not none" in gate["when"]
+
+
+OPENSSH_SIM = (
+    "Inst openssh-client [1:9.2p1-2+deb12u5] (1:9.2p1-2+deb12u7 Debian:12.12/stable [amd64])\n"
+    "Inst openssh-sftp-server [1:9.2p1-2+deb12u5] (1:9.2p1-2+deb12u7 Debian:12.12/stable [amd64]) []\n"
+    "Inst openssh-server [1:9.2p1-2+deb12u5] (1:9.2p1-2+deb12u7 Debian:12.12/stable [amd64]) []\n"
+    "Conf openssh-client (1:9.2p1-2+deb12u7 Debian:12.12/stable [amd64])\n"
+)
+U7 = "1:9.2p1-2+deb12u7"
+
+
+def test_simulated_changes_parses_installs_and_removals():
+    installs, removals = patch_module.simulated_changes(OPENSSH_SIM + "Remv libfoo1:amd64 [1.0-1]\n")
+    assert installs == {"openssh-client": U7, "openssh-sftp-server": U7, "openssh-server": U7}
+    assert removals == ["libfoo1"]
+
+
+def test_scope_violations_allow_only_approved_versions():
+    approved = {"openssh-server": U7, "openssh-client": U7, "openssh-sftp-server": U7}
+    assert patch_module.scope_violations(OPENSSH_SIM, approved) == []
+    problems = patch_module.scope_violations(OPENSSH_SIM, {"openssh-server": U7})
+    assert any("unapproved package openssh-client" in p for p in problems)
+    problems = patch_module.scope_violations(OPENSSH_SIM, {**approved, "openssh-client": "1:9.2p1-2+deb12u6"})
+    assert any("would install openssh-client" in p for p in problems)
+
+
+def test_apply_patch_refuses_scope_expansion_without_installing(monkeypatch):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return patch_module.subprocess.CompletedProcess(command, 0, OPENSSH_SIM, "")
+
+    monkeypatch.setattr(patch_module.subprocess, "run", fake_run)
+    changed, after, error = patch_module.apply_patch(
+        "openssh-server", "amd64", U7, {"openssh-server": U7}, True, check_mode=False)
+    assert (changed, after) == (False, None)
+    assert error["code"] == "scope_expansion"
+    assert len(calls) == 1 and "-s" in calls[0]
+
+
+def test_apply_patch_installs_when_dependencies_are_approved(monkeypatch):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if command[0] == "dpkg-query":
+            return patch_module.subprocess.CompletedProcess(command, 0, f"openssh-server\t{U7}\tamd64\n", "")
+        return patch_module.subprocess.CompletedProcess(command, 0, OPENSSH_SIM, "")
+
+    monkeypatch.setattr(patch_module.subprocess, "run", fake_run)
+    approved = {"openssh-server": U7, "openssh-client": U7, "openssh-sftp-server": U7}
+    changed, after, error = patch_module.apply_patch(
+        "openssh-server", "amd64", U7, approved, True, check_mode=False)
+    assert error is None and changed is True and after == U7
+    assert "-s" in calls[0] and "-y" in calls[1] and "openssh-server:amd64=" + U7 in calls[1]
+
+
+def test_scope_violations_reject_removals():
+    problems = patch_module.scope_violations(
+        "Remv libfoo1:amd64 [1.0-1]\n", {"openssh-server": U7})
+    assert problems == ["would remove libfoo1"]
+
+
+def test_apply_patch_reports_simulation_failure(monkeypatch):
+    def fake_run(command, **kwargs):
+        return patch_module.subprocess.CompletedProcess(command, 100, "", "E: simulated failure")
+
+    monkeypatch.setattr(patch_module.subprocess, "run", fake_run)
+    changed, after, error = patch_module.apply_patch(
+        "openssh-server", "amd64", U7, {"openssh-server": U7}, True, check_mode=False)
+    assert (changed, after) == (False, None)
+    assert error["code"] == "apt_simulation_failed"
+    assert "exited 100" in error["message"]
+
+
+def test_apply_patch_reports_simulation_timeout(monkeypatch):
+    def fake_run(command, **kwargs):
+        raise patch_module.subprocess.TimeoutExpired(command, 300)
+
+    monkeypatch.setattr(patch_module.subprocess, "run", fake_run)
+    changed, after, error = patch_module.apply_patch(
+        "openssh-server", "amd64", U7, {"openssh-server": U7}, True, check_mode=False)
+    assert (changed, after) == (False, None)
+    assert error["code"] == "apt_simulation_failed"
+    assert error["message"] == "TimeoutExpired"
+
+
+def test_apply_patch_reports_install_timeout(monkeypatch):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if "-s" in command:
+            return patch_module.subprocess.CompletedProcess(command, 0, OPENSSH_SIM, "")
+        raise patch_module.subprocess.TimeoutExpired(command, 300)
+
+    monkeypatch.setattr(patch_module.subprocess, "run", fake_run)
+    approved = {"openssh-server": U7, "openssh-client": U7, "openssh-sftp-server": U7}
+    changed, after, error = patch_module.apply_patch(
+        "openssh-server", "amd64", U7, approved, True, check_mode=False)
+    assert (changed, after) == (False, None)
+    assert error["code"] == "patch_timeout"
+    assert "timed out" in error["message"]
+    assert len(calls) == 2
