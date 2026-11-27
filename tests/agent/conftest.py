@@ -1,7 +1,14 @@
 import pytest
-from fastapi.testclient import TestClient
 
-from agent.main import create_app
+# The agent runtime is installed from requirements-agent.txt (used by Docker).
+# The core CI install does not include FastAPI/httpx; skip this directory there
+# instead of failing collection. Local and Docker verification install them.
+pytest.importorskip("fastapi")
+pytest.importorskip("httpx")
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from agent.main import create_app  # noqa: E402
 
 
 @pytest.fixture

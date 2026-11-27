@@ -3,9 +3,13 @@ import json
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
-from agent.main import create_app
+pytest.importorskip("fastapi")
+pytest.importorskip("httpx")
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+from agent.main import create_app  # noqa: E402
 from patch_agent.preflight import REQUIRED_CHECKS
 
 ROOT = Path(__file__).resolve().parents[2]

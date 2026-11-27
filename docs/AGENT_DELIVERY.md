@@ -216,6 +216,13 @@ git push origin dhya/full-project
 Never push to `main`, never force-push, never commit `.env`, keys, tokens, raw lab logs,
 `Seba/`, `Plan/` or `agent-data/`.
 
+**CI coverage note:** the repository’s existing `ci.yml` installs the core dependencies
+only. Until a maintainer with GitHub `workflow` scope adds
+`fastapi==0.165.0 httpx==0.27.2 uvicorn==0.54.0` to its install step, the
+`tests/agent/` directory is skipped by the core CI (via `pytest.importorskip`) and the
+agent contract is verified locally and by the Docker `/health` check. Add those three
+pins to the install step to run `tests/agent` in CI.
+
 To test with the real Noyau, extract/run it **outside** this repository:
 
 ```bash
