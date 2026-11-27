@@ -133,9 +133,9 @@ def _assess_package(package_id, package, advisories):
         candidate_source = candidate["source"]
         if candidate_source is None:
             continue
-        if compare_versions(candidate["version"], installed) <= 0:
-            continue
         try:
+            if compare_versions(candidate["version"], installed) <= 0:
+                continue
             if not is_fixed(candidate_source["version"], required):
                 continue
         except ValueError:

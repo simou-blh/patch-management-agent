@@ -92,6 +92,15 @@ def test_no_installable_candidate_defers():
     assert "no installable candidate" in result["decision"]["reason"]
 
 
+def test_invalid_candidate_versions_are_skipped():
+    result = build({"demo-package:amd64": package(
+        "1:1.0-1", "demo-source", "1:1.0-1",
+        [("!!!", "demo-source", "1:1.0-2"),
+         ("1:1.0-2", "demo-source", "1:1.0-2")])})["results"][0]
+    assert result["decision"]["action"] == "patch"
+    assert result["decision"]["proposed_version"] == "1:1.0-2"
+
+
 def test_assessment_binds_its_inputs():
     cache = load_cache()
     collection = evidence({"demo-package:amd64": package("1:1.0-1", "demo-source", "1:1.0-1")})

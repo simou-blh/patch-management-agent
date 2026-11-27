@@ -370,7 +370,7 @@ VM mutation or real advisory feed is included, and deployment remains blocked.
 
 | Check | Command | Result | Tag |
 |---|---|---|---|
-| Full suite | `./.venv/bin/python -m pytest -q` | **502 passed, 400 skipped** | `VERIFIED-LOCAL` |
+| Full suite | `./.venv/bin/python -m pytest -q` | **504 passed, 400 skipped** | `VERIFIED-LOCAL` |
 | JSON/YAML artifact checks | `python scripts/check_artifacts.py` | “All JSON/YAML artifacts passed.” | `VERIFIED-LOCAL` |
 | Sprint progress bars | `python scripts/update_progress.py --check` | current | `VERIFIED-LOCAL` |
 | Whitespace errors | `git diff --check` | clean | `VERIFIED-LOCAL` |
