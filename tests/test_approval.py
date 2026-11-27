@@ -74,3 +74,11 @@ def test_evidence_cannot_expand_inventory_scope(plan, evidence):
     plan["targets"].append("unknown")
     with pytest.raises(ValueError, match="unknown inventory host"):
         validate_plan(plan, evidence)
+
+
+def test_unknown_run_id_is_rejected(tmp_path):
+    store = ApprovalStore(tmp_path)
+    with pytest.raises(ValueError, match="unknown run id"):
+        store.status("missing-run")
+    with pytest.raises(ValueError, match="unknown run id"):
+        store.request_deployment("missing-run", "0" * 64)
