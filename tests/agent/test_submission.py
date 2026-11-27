@@ -3,7 +3,11 @@ import json
 from pathlib import Path
 
 import pytest
-from jsonschema import ValidationError
+
+pytest.importorskip("fastapi")
+pytest.importorskip("httpx")
+
+from jsonschema import ValidationError  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location("submit_agent_script", ROOT / "scripts/submit_agent.py")

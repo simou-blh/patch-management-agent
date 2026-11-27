@@ -1,7 +1,12 @@
 import json
 from pathlib import Path
 
-from jsonschema import Draft202012Validator
+import pytest
+
+pytest.importorskip("fastapi")
+pytest.importorskip("httpx")
+
+from jsonschema import Draft202012Validator  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 
