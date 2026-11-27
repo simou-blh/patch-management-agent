@@ -28,7 +28,7 @@ Do not install WSL, VirtualBox or Docker only to work on documentation.
 
 ## 3. Verified local commands (Windows PowerShell, repo root)
 
-Re-checked 2026-11-13 on Windows at `main` commit `4a9fd91`. The earlier
+Re-checked 2026-11-27 on Windows at `main` commit `5a47184`. The earlier
 2026-10-31 results (99 tests) are kept in [validation.md](validation.md).
 
 ```powershell
@@ -42,7 +42,7 @@ uv run python scripts/demo.py
 | Command | Result | Tag |
 |---|---|---|
 | `uv sync` | 38 packages resolved; 6 updated because `uv.lock` is not in Git | `VERIFIED-LOCAL` |
-| `uv run python -m pytest -q` | 344 passed, 400 skipped | `VERIFIED-LOCAL` |
+| `uv run python -m pytest -q` | 427 passed, 400 skipped | `VERIFIED-LOCAL` |
 | `uv run python scripts/check_artifacts.py` | "All JSON/YAML artifacts passed." | `VERIFIED-LOCAL` |
 | `uv run python scripts/update_progress.py --check` | "README sprint bars are current." | `VERIFIED-LOCAL` |
 | `uv run python scripts/demo.py` | All gates PASS, starting with the contract-v1 evidence import; 4 schema-validated JSON reports under `data/demo-*` | `VERIFIED-LOCAL` |
