@@ -1,0 +1,30 @@
+{
+  "slug": "patch-management-agent",
+  "name": "Patch Management Agent",
+  "version": "1.0.0",
+  "description": "Assesses Debian security updates, builds evidence-backed patch plans and reports tenant-scoped alerts to the Noyau.",
+  "filiere": "cybersecurite",
+  "category": "patch_management",
+  "developer": {
+    "name": "Dhia Eddine Laghrour",
+    "email": "m_laghrour@estin.dz"
+  },
+  "team_name": "Equipe Patch Management",
+  "pricing_model": "flat_monthly",
+  "price": 0,
+  "resource_requirements": {
+    "cpu": "1.0",
+    "memory_mb": 512
+  },
+  "endpoints": {
+    "base_url": "http://localhost:9000",
+    "health": "/health",
+    "activate": "/tenant/activate",
+    "deactivate": "/tenant/deactivate",
+    "status": "/tenant/{tenant_id}/status",
+    "config_schema": "/config-schema",
+    "exchange_notify": "/exchange/notify"
+  },
+  "produces": [],
+  "consumes": []
+}

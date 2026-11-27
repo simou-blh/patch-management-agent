@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+.pytest_cache
+__pycache__
+Seba
+Plan
+agent-data
+data
+tests
+docs
+README.md
+README-FULL.md
+plan.md
+*.sqlite
+.env
