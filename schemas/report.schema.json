@@ -1,16 +1,49 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Foundation deployment request report (extend for live rollout)",
+  "title": "Deployment run report",
+  "description": "Terminal run report. A blocked report is the foundation behaviour; live rollout reports must carry durable job and recovery evidence.",
   "type": "object", "additionalProperties": false,
   "required": ["run_id", "timestamp", "plan_hash", "approval", "final_status", "reason", "jobs", "recovery"],
   "properties": {
-    "run_id": {"type": "string"},
+    "run_id": {"type": "string", "minLength": 1},
     "timestamp": {"type": "string", "format": "date-time"},
     "plan_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
     "approval": {"enum": ["pending", "approved", "rejected"]},
-    "final_status": {"const": "blocked"},
-    "reason": {"type": "string"},
-    "jobs": {"type": "array", "maxItems": 0},
-    "recovery": {"type": "array", "maxItems": 0}
+    "final_status": {"enum": ["blocked", "succeeded", "failed", "partial", "aborted"]},
+    "reason": {"type": "string", "minLength": 1},
+    "jobs": {"type": "array", "items": {"$ref": "#/$defs/job"}},
+    "recovery": {"type": "array", "items": {"$ref": "#/$defs/recovery"}},
+    "observed_versions": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z0-9][a-z0-9+.-]+(:[a-z0-9]+)?$"},
+      "additionalProperties": {"type": "string", "minLength": 1}
+    }
+  },
+  "$defs": {
+    "job": {
+      "type": "object", "additionalProperties": false,
+      "required": ["host", "stage", "template", "task_id", "status", "started_at", "finished_at", "log_ref"],
+      "properties": {
+        "host": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,62}$"},
+        "stage": {"enum": ["inspect", "preflight", "patch", "verify", "recover"]},
+        "template": {"type": "string", "minLength": 1},
+        "task_id": {"type": ["string", "null"], "minLength": 1},
+        "status": {"enum": ["pending", "running", "succeeded", "failed", "skipped", "unknown"]},
+        "started_at": {"type": ["string", "null"], "format": "date-time"},
+        "finished_at": {"type": ["string", "null"], "format": "date-time"},
+        "log_ref": {"type": ["string", "null"], "minLength": 1},
+        "detail": {"type": "string", "minLength": 1}
+      }
+    },
+    "recovery": {
+      "type": "object", "additionalProperties": false,
+      "required": ["host", "status", "detail"],
+      "properties": {
+        "host": {"type": "string", "pattern": "^[a-z][a-z0-9-]{0,62}$"},
+        "status": {"enum": ["succeeded", "failed", "not_attempted", "manual_intervention"]},
+        "detail": {"type": "string", "minLength": 1},
+        "manual_intervention": {"type": "boolean"}
+      }
+    }
   }
 }
