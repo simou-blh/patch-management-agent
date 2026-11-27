@@ -102,7 +102,10 @@ With `preflight_cache_previous: true` (not in check mode), preflight runs
 `preflight_recovery_artifact_dir` and verifies the downloaded `.deb` files with
 any operator-supplied artifacts. It writes files only; installed packages are
 not changed. A previous version that the repository no longer offers makes the
-recovery artifacts `failed`. Configuration backups are written to
+recovery artifacts `failed`. `preflight_cache_packages` names the approved rollback scope
+when only some packages can or need to be rolled back (for example openssh, while the
+libssl3 it pulls in only moves forward); without it every expectation is cached.
+Configuration backups are written to
 `<backup_root>/<host>/<timestamp>/<original path>`; recovery must receive that
 exact directory as `recover_backup_root`.
 
@@ -123,7 +126,10 @@ three stay behind fail gates until deployment is unblocked:
 
 - `playbooks/library/patch_packages.py` enforces exact approved versions, only
   configured service restarts, no kernel changes, and reports per-package patch
-  outcomes against `schemas/patch.schema.json` (`patch_agent/patch.py`).
+  outcomes against `schemas/patch.schema.json` (`patch_agent/patch.py`). Each install is
+  simulated with `apt-get -s` first and refused (`scope_expansion`) if APT would change a
+  package that is not in the approved plan, install a different version, or remove
+  anything, so dependencies must be approved explicitly.
 - `playbooks/library/verify_packages.py` compares observed installed versions
   against the approved plan using Debian version semantics and runs configured
   service health checks against `schemas/verify.schema.json`
@@ -134,7 +140,9 @@ three stay behind fail gates until deployment is unblocked:
   `schemas/recover.schema.json` (`patch_agent/recover.py`). Repair and package
   restoration are simulated with `apt-get -s` first and refused if APT would
   remove any package; restored package versions and config bytes are checked
-  after the change.
+  after the change. All previous packages are restored in one APT transaction, because
+  packages built together (openssh-server/-client/-sftp-server) cannot be downgraded
+  one at a time.
 
 All three run in read-only simulate mode by default (`deployment_unblocked`
 defaults to `false`). The apply/restart path is gated behind that flag and

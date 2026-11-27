@@ -511,6 +511,22 @@ def deb_filename_glob(name, version):
     return f"{name}_{version.replace(':', '%3a')}_*.deb"
 
 
+def rollback_scope(expectations, names):
+    """Select the expectations whose previous version must be cached.
+
+    ``names`` is the approved rollback scope; ``None`` means every expectation.
+    Libraries that only move forward (for example libssl3 pulled in by an
+    openssh fix) can be left out when their old version is no longer published.
+    """
+    if names is None:
+        return expectations
+    known = {expectation["name"] for expectation in expectations}
+    unknown = sorted(set(names) - known)
+    if unknown:
+        raise ValueError(f"rollback scope names packages without expectations: {', '.join(unknown)}")
+    return [expectation for expectation in expectations if expectation["name"] in set(names)]
+
+
 def cache_previous_packages(artifact_dir, expectations, run=None):
     """Download the currently installed (previous) version of each package.
 
@@ -602,6 +618,7 @@ def main():
             "recovery_artifact_dir": {"type": "str", "default": None},
             "recovery_artifacts": {"type": "list", "elements": "dict", "default": []},
             "cache_previous": {"type": "bool", "default": False},
+            "cache_packages": {"type": "list", "elements": "str", "default": None},
         },
         supports_check_mode=True,
     )
@@ -646,7 +663,8 @@ def main():
                 cache_errors.append("Check mode does not download previous packages")
             else:
                 cached, cache_errors = cache_previous_packages(
-                    module.params["recovery_artifact_dir"], expectations
+                    module.params["recovery_artifact_dir"],
+                    rollback_scope(expectations, module.params["cache_packages"]),
                 )
                 changed = changed or bool(cached)
                 known = {spec.get("name") for spec in artifact_specs if isinstance(spec, dict)}
