@@ -290,3 +290,27 @@ in one bounded transaction; preflight caches only the approved rollback scope
 Not yet done: the rollout coordinator itself is Baha's (the sequence above was driven by the
 operator host by host); Semaphore templates still run the playbooks committed on `main`,
 which do not include these changes until they are merged.
+
+## Update 2026-11-27 (live failure scenarios)
+
+Second live pass on the same lab, focused on failure handling. Tagged `VERIFIED-LIVE`;
+every emitted record passed its contract validator.
+
+| Scenario | Host(s) | Result |
+|---|---|---|
+| All hosts powered off | all | every host gets an explicit `inspection_failed` record; verify/recover gates stop |
+| One host down (vm-03) | all | vm-01/vm-02 report 357 packages, vm-03 an explicit error; verify stops at vm-03; collector rejects the evidence |
+| dpkg lock held by another process | vm-01 | preflight `not_ready`, blocking `apt_locks` |
+| Package unpacked but not configured | vm-02 | preflight blocks on `apt_health`; bounded repair (`apt-get install -f`) configures it; `dpkg --audit` clean; recovery reports no manual intervention |
+| Local port 22 rejected (nft), version correct | vm-03 | verify fails on the TCP health check only; passes again once the rule is removed |
+| Kernel package in an approved plan | vm-01 | patch refuses the plan |
+| `--check` with deployment unblocked | vm-01 | every package `skipped`; openssh unchanged |
+
+Bug found and fixed by the broken-package scenario: recovery decided manual intervention
+from the `dpkg --audit` taken *before* its repair, so a successful repair was still
+reported as manual. It now re-runs `dpkg --audit` after live recovery actions (result noted
+in the repair detail) and flags manual intervention only for failures or issues that
+remain. The recovery contract no longer rejects a successful repair without a package
+restore; a manual-intervention record must instead show a failure, an error or
+package-manager issues. The full happy-path scenario (23 checks) passed again afterwards,
+and the Linux CI build passed with 841 tests.

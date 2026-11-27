@@ -275,3 +275,44 @@ def test_restore_previous_packages_refuses_unlisted_change(monkeypatch):
     records = recover_module.restore_previous_packages(entries, True, False)
     assert len(calls) == 1 and records[0]["result"] == "failed"
     assert "unapproved package libssl3" in records[0]["detail"]
+
+
+DIAG_BROKEN = {"dpkg_audit": {"issues": 4}, "apt_policy": {}, "service_status": {}}
+REPAIR_OK = {"attempted": True, "command": "apt-get install -f -y", "dry_run": False,
+             "result": "succeeded", "detail": "ok"}
+
+
+def test_successful_repair_clears_manual_intervention():
+    # Found live: diagnostics run before the repair must not force manual intervention.
+    assert recover_module.needs_manual_intervention(DIAG_BROKEN, REPAIR_OK, [], [], 0) is False
+
+
+def test_issues_left_after_repair_need_manual_intervention():
+    assert recover_module.needs_manual_intervention(DIAG_BROKEN, REPAIR_OK, [], [], 2) is True
+
+
+def test_blocked_recovery_with_broken_state_needs_manual_intervention():
+    repair = {"attempted": False, "result": "not_attempted"}
+    assert recover_module.needs_manual_intervention(DIAG_BROKEN, repair, [], [], None) is True
+
+
+def test_failed_restore_needs_manual_intervention():
+    failed = [{"result": "failed"}]
+    assert recover_module.needs_manual_intervention({"dpkg_audit": {"issues": 0}}, REPAIR_OK, failed, [], 0) is True
+
+
+def test_contract_accepts_repaired_host_record():
+    record = recover_module.host_result(DIAG_BROKEN, REPAIR_OK, [], [], manual_intervention=False)
+    assert validate_recover_contract(envelope(record)) is None
+
+
+def test_contract_accepts_manual_when_audit_issues_remain():
+    record = recover_module.host_result(DIAG_BROKEN, REPAIR_OK, [], [], manual_intervention=True)
+    assert validate_recover_contract(envelope(record)) is None
+
+
+def test_contract_rejects_manual_without_any_reason():
+    diagnostics = {"dpkg_audit": {"issues": 0}, "apt_policy": {}, "service_status": {}}
+    record = recover_module.host_result(diagnostics, REPAIR_OK, [], [], manual_intervention=True)
+    with pytest.raises(ValueError, match="without a failure"):
+        validate_recover_contract(envelope(record))

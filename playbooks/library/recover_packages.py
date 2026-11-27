@@ -69,6 +69,36 @@ def _normalise_config_paths(config_paths):
     return normalised
 
 
+def audit_issue_count():
+    """Count non-empty ``dpkg --audit`` lines; ``None`` if dpkg could not run."""
+    try:
+        result = subprocess.run(
+            ["dpkg", "--audit"], capture_output=True, text=True, timeout=60,
+            env={**os.environ, "LC_ALL": "C", "LANG": "C"},
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    return len([line for line in result.stdout.splitlines() if line.strip()])
+
+
+def needs_manual_intervention(diagnostics, repair, previous_restorations, config_restorations,
+                              remaining_issues):
+    """Decide manual intervention from failures and the package state *after* recovery.
+
+    ``remaining_issues`` is the ``dpkg --audit`` count after live recovery
+    actions, or ``None`` when nothing was attempted; then the pre-recovery
+    diagnostics decide.
+    """
+    if repair["result"] == "failed":
+        return True
+    if any(r["result"] == "failed" for r in previous_restorations + config_restorations):
+        return True
+    if remaining_issues is not None:
+        return remaining_issues > 0
+    audit = diagnostics.get("dpkg_audit") or {}
+    return audit.get("issues", 0) > 0
+
+
 def capture_diagnostics():
     """Read-only diagnostics: dpkg --audit, apt-cache policy, service status."""
     diagnostics = {"dpkg_audit": None, "apt_policy": None, "service_status": None}
@@ -390,13 +420,17 @@ def main():
                 module.params["deployment_unblocked"], module.check_mode,
             ))
 
-        manual = (
-            repair["result"] == "failed" or
-            any(r["result"] == "failed" for r in previous_restorations) or
-            any(r["result"] == "failed" for r in config_restorations) or
-            diagnostics["dpkg_audit"] is not None and
-            diagnostics["dpkg_audit"].get("issues", 0) > 0
-        )
+        acted = repair["attempted"] or any(
+            r["attempted"] for r in previous_restorations + config_restorations)
+        remaining = audit_issue_count() if acted else None
+        if acted:
+            state = ("dpkg --audit could not run after recovery" if remaining is None
+                     else f"dpkg --audit after recovery: {remaining} issue line(s)")
+            repair = {**repair, "detail": (repair["detail"] + "\n" + state)[-2000:]}
+            if remaining is None:
+                remaining = 1  # unknown state is never reported as recovered
+        manual = needs_manual_intervention(
+            diagnostics, repair, previous_restorations, config_restorations, remaining)
 
         # Report a change whenever a live APT run or file restore was attempted.
         changed = repair["attempted"] or any(

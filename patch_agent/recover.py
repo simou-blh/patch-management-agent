@@ -25,8 +25,15 @@ def validate_recover_contract(result: dict) -> None:
     RECOVER_VALIDATOR.validate(result)
     completed_at = datetime.fromisoformat(result["collected_at"])
     if result["manual_intervention"]:
-        if result["repair"]["result"] == "succeeded" and not result["restoration"]["previous_packages"]:
-            raise ValueError("manual intervention flagged but no recovery action was attempted")
+        # A manual-intervention record must show why: a failed action, an error, or
+        # package-manager problems found by the diagnostics.
+        failed = result["repair"]["result"] == "failed" or any(
+            entry["result"] == "failed"
+            for entry in result["restoration"]["previous_packages"] + result["restoration"]["config_backups"]
+        )
+        audit_issues = int((result["diagnostics"].get("dpkg_audit") or {}).get("issues", 0) or 0)
+        if not failed and audit_issues == 0 and result["error"] is None:
+            raise ValueError("manual intervention flagged without a failure or package-manager issue")
     if not result["manual_intervention"]:
         if result["repair"]["result"] == "failed":
             raise ValueError("no manual intervention but repair failed")
