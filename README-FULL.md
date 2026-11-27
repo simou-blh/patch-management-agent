@@ -157,8 +157,13 @@ used by Semaphore. Commit and push before running a template.
 
 ## 8. Semaphore
 
+Create a git-ignored `.env` with the two required values (never commit it):
+
 ```bash
-cp .env.example .env          # if present; otherwise create it
+cat > .env <<'EOF'
+SEMAPHORE_ADMIN_PASSWORD=replace-with-a-strong-password
+SEMAPHORE_ACCESS_KEY_ENCRYPTION=replace-with-32-bytes-of-random-text
+EOF
 docker compose config --quiet
 docker compose up -d semaphore
 curl --fail http://localhost:3000/api/ping
