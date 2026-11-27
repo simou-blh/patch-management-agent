@@ -166,6 +166,10 @@ Splitting an already-completed checkpoint cannot increase its total weight above
 - [ ] S2.3 — Meftah: advisory/candidate validation and APT simulation reject dependency expansion, removals and unsupported actions; verification/recovery policies and executor/report contracts are fixed.
 - [ ] S2.4 — Abderaouf: preflight checks privileges, disk, APT health/locks, drift and candidate availability; previous package artifacts, configuration backups and service policies are verified.
 - [ ] S2.5 — Dhia + Ahmed + team: negative/integration tests pass; a documented real assessment produces an evidence-backed plan, and failed readiness/evidence blocks execution. Deployment remains blocked.
+  - [ ] S2.5a — Negative matrix for Debian version and advisory semantics: epochs, revisions, binary/source versions, invalid versions and uncertain findings.
+  - [ ] S2.5b — Negative matrix for execution readiness: dependency-scope expansion, invalid policies and failed preflight/backup prerequisites.
+  - [ ] S2.5c — Assessment-to-plan integration through MCP with controlled fixture data, including stale and adversarial evidence.
+  - [ ] S2.5d — A documented real assessment of lab evidence produces an evidence-backed plan whose failed readiness or evidence blocks execution.
 <!-- sprint:2:end -->
 
 ### Sprint 3 — Approved canary, recovery and reports
