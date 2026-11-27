@@ -1,7 +1,7 @@
 """Local, single-operator approval store. There is no live execution backend yet."""
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -27,7 +27,7 @@ def plan_hash(plan):
     return hashlib.sha256(canonical(plan).encode()).hexdigest()
 
 
-def validate_plan(plan, evidence):
+def validate_plan(plan, evidence, *, assessment=None, preflight=None):
     PLAN_VALIDATOR.validate(plan)
     validate_evidence_readiness(evidence, targets=plan["targets"], max_age=evidence_max_age())
     targets = set(plan["targets"])
@@ -52,6 +52,55 @@ def validate_plan(plan, evidence):
             raise ValueError("deferred packages must have a null proposed version")
     if {p["host"] for p in plan["packages"]} != targets:
         raise ValueError("each selected host must have package decisions")
+    if assessment is not None:
+        _validate_assessment_binding(plan, evidence, assessment)
+    if preflight is not None:
+        _validate_preflight_binding(plan, preflight)
+
+
+def _validate_assessment_binding(plan, evidence, assessment):
+    from patch_agent.assessment import canonical_sha256, validate_assessment_result
+
+    validate_assessment_result(assessment)
+    if assessment["evidence_sha256"] != canonical_sha256(evidence):
+        raise ValueError("assessment is bound to a different evidence record")
+    results = {(result["host"], result["package"]): result for result in assessment["results"]}
+    for package in plan["packages"]:
+        result = results.get((package["host"], package["name"]))
+        if result is None:
+            raise ValueError(
+                f"package {package['name']} on {package['host']} was not assessed")
+        decision = result["decision"]
+        if package["action"] == "patch":
+            if decision is None or decision["action"] != "patch":
+                raise ValueError(
+                    f"assessment does not approve a patch for {package['host']}/{package['name']}")
+            if decision["proposed_version"] != package["proposed_version"]:
+                raise ValueError(
+                    f"plan version does not match the assessed decision for "
+                    f"{package['host']}/{package['name']}")
+        elif decision is not None and decision["action"] != "defer":
+            raise ValueError(
+                f"plan defers {package['host']}/{package['name']} but the assessment proposes a patch")
+
+
+def _validate_preflight_binding(plan, preflight):
+    from datetime import datetime
+    from patch_agent.preflight import validate_preflight_contract
+
+    validate_preflight_contract(preflight)
+    if set(preflight["targets"]) != set(plan["targets"]):
+        raise ValueError("preflight targets must match the plan targets")
+    blocking = [name for name, host in preflight["hosts"].items() if host["status"] != "ready"]
+    if blocking:
+        raise ValueError(f"preflight blocks: {', '.join(sorted(blocking))}")
+    age_limit = evidence_max_age()
+    collected_at = datetime.fromisoformat(preflight["collected_at"])
+    age = datetime.now(timezone.utc) - collected_at
+    if age < timedelta(0):
+        raise ValueError("preflight timestamp is in the future")
+    if age > age_limit:
+        raise ValueError("preflight result is stale")
 
 
 class ApprovalStore:
@@ -77,8 +126,8 @@ class ApprovalStore:
         finally:
             db.close()
 
-    def submit(self, plan, evidence):
-        validate_plan(plan, evidence)
+    def submit(self, plan, evidence, *, assessment=None, preflight=None):
+        validate_plan(plan, evidence, assessment=assessment, preflight=preflight)
         digest = plan_hash(plan)
         with self.connect() as db:
             db.execute("""INSERT INTO plans VALUES (?, ?, ?, 'pending', NULL)
