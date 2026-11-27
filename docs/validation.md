@@ -328,6 +328,7 @@ deployment remains blocked.
 | JSON/YAML artifact checks | `python scripts/check_artifacts.py` | “All JSON/YAML artifacts passed.” | `VERIFIED-LOCAL` |
 | Sprint progress bars | `python scripts/update_progress.py --check` | “README sprint bars are current.” | `VERIFIED-LOCAL` |
 | Whitespace errors | `git diff --check` | clean | `VERIFIED-LOCAL` |
+| GitHub Actions CI | `CI` workflow on Ubuntu 24.04 | Success for commit `44ac4f8` — [run 46041263367](https://github.com/simou-blh/patch-management-agent/actions/runs/46041263367); every step succeeded, including artifact, progress and test checks | `VERIFIED-CI` |
 
 The 400 skips remain the `dpkg --compare-versions` cross-checks; the Ubuntu CI runner
 executes them.
