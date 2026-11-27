@@ -361,3 +361,48 @@ Not yet done: stale advisory-cache freshness and unavailable-fixed-version match
 (S2.2, Baha); the assessment-to-plan MCP integration (S2.5c); a real assessment (S2.5d);
 live canary/recovery scenarios for this branch (S3.5). No checkpoint other than S1.5b is
 ticked.
+
+## Update 2026-11-27 (full-project branch)
+
+Branch `dhya/full-project` adds the missing deterministic pipeline between the existing
+contracts. Everything below is **synthetic/contract testing**; no live Semaphore task,
+VM mutation or real advisory feed is included, and deployment remains blocked.
+
+| Check | Command | Result | Tag |
+|---|---|---|---|
+| Full suite | `./.venv/bin/python -m pytest -q` | **502 passed, 400 skipped** | `VERIFIED-LOCAL` |
+| JSON/YAML artifact checks | `python scripts/check_artifacts.py` | “All JSON/YAML artifacts passed.” | `VERIFIED-LOCAL` |
+| Sprint progress bars | `python scripts/update_progress.py --check` | current | `VERIFIED-LOCAL` |
+| Whitespace errors | `git diff --check` | clean | `VERIFIED-LOCAL` |
+| CLI smoke test | `scripts/build_assessment.py` + `scripts/build_plan.py` | assessment written, plan hash printed, one patch decision | `VERIFIED-LOCAL` |
+
+Added:
+
+- `patch_agent/assessment_builder.py` — Debian source-version matching from evidence +
+  advisory cache, producing validated `affected`/`fixed`/`uncertain`/
+  `no_known_advisory` results and `patch`/`defer` decisions with exact versions
+  (`tests/test_assessment_builder.py`, 11 tests).
+- `patch_agent/planner.py` — assessment + evidence to a schema-valid plan, kernel patches
+  converted to defers, evidence digest checked (`tests/test_planner.py`, 6 tests).
+- `patch_agent/report.py` and an extended `schemas/report.schema.json` — terminal
+  `blocked`/`succeeded`/`failed`/`partial`/`aborted` reports with job and recovery
+  records (`tests/test_report.py`, 8 tests). The existing blocked report stays valid.
+- `patch_agent/executor.py` — approval-bound facade with fixed logical-template mapping,
+  duplicate-run blocking, revalidation before each stage, and durable task/log records
+  (`tests/test_executor.py`, 7 tests). The transport is injected; no live Semaphore
+  adapter is committed.
+- `patch_agent/coordinator.py` — canary then sequential fleet, stop on first failure,
+  recovery only on the affected host, fleet disabled by default
+  (`tests/test_coordinator.py`, 7 tests).
+- Approval gates: `validate_plan` and `submit_plan` consume operator-owned
+  `assessment.json`/`preflight.json`; `PATCH_AGENT_REQUIRE_GATES=1` makes them mandatory.
+  Assessment/evidence digest binding, exact proposed versions, preflight readiness and
+  freshness are checked (`tests/test_plan_gates.py` 8 tests, `tests/test_mcp_gates.py`
+  3 tests).
+- `scripts/build_assessment.py`, `scripts/build_plan.py`, `README-FULL.md` and
+  `docs/vulnerable-fixture.md`.
+
+Not yet done: a live Semaphore transport adapter, a live runner for the coordinator, a
+real advisory feed, a real assessment of lab evidence, and live canary/recovery through
+the facade. Those remain Sprint 2/3/4 live gates; no synthetic result is presented as
+live evidence.
