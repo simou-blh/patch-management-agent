@@ -71,6 +71,10 @@ class RunStore:
                 host TEXT NOT NULL, stage TEXT NOT NULL, template INTEGER NOT NULL,
                 task_id TEXT, status TEXT NOT NULL, started_at TEXT, finished_at TEXT,
                 log_ref TEXT, detail TEXT)""")
+            db.execute("""CREATE TABLE IF NOT EXISTS host_states (
+                run_id TEXT NOT NULL, host TEXT NOT NULL, status TEXT NOT NULL,
+                task_id TEXT, updated_at TEXT NOT NULL, detail TEXT,
+                PRIMARY KEY (run_id, host))""")
         if hasattr(self.database, "chmod"):
             try:
                 self.database.chmod(0o600)
@@ -134,6 +138,21 @@ class RunStore:
                  "task_id": row[4], "status": row[5], "started_at": row[6],
                  "finished_at": row[7], "log_ref": row[8], "detail": row[9]} for row in rows]
 
+    def set_host_state(self, run_id, host, status, task_id=None, detail=None):
+        with self.connect() as db:
+            db.execute("""INSERT INTO host_states VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(run_id, host) DO UPDATE SET status=excluded.status,
+                task_id=COALESCE(excluded.task_id, host_states.task_id),
+                updated_at=excluded.updated_at, detail=excluded.detail""",
+                (run_id, host, status, task_id, timestamp(), detail))
+
+    def host_states(self, run_id):
+        with self.connect() as db:
+            rows = db.execute("""SELECT host, status, task_id, updated_at, detail
+                FROM host_states WHERE run_id=? ORDER BY host""", (run_id,)).fetchall()
+        return [{"host": row[0], "status": row[1], "task_id": row[2],
+                 "updated_at": row[3], "detail": row[4]} for row in rows]
+
     def save_report(self, run_id, report, status):
         with self.connect() as db:
             db.execute("UPDATE runs SET report=?, status=?, updated_at=? WHERE run_id=?",
@@ -186,7 +205,10 @@ class ExecutionFacade:
     def begin(self, run_id, plan_hash):
         plan = self._approved_plan(run_id, plan_hash)
         self._revalidate(plan)
-        return self.runs.create_run(run_id, plan_hash)
+        run = self.runs.create_run(run_id, plan_hash)
+        for host in plan["targets"]:
+            self.runs.set_host_state(run_id, host, "pending")
+        return run
 
     def start_stage(self, run_id, host, stage, extra_vars=None):
         if stage not in STAGES:
@@ -205,6 +227,7 @@ class ExecutionFacade:
             raise ValueError("transport did not return a task id")
         job_id = self.runs.add_job(run_id, host, stage, template, task_id,
                                   task.get("log_ref"), status="running")
+        self.runs.set_host_state(run_id, host, "running", task_id=task_id)
         self.runs.set_status(run_id, "running")
         return {"job_id": job_id, "task_id": task_id, "log_ref": task.get("log_ref")}
 
@@ -221,6 +244,23 @@ class ExecutionFacade:
                 self.runs.update_job(job["id"], status, finished_at=timestamp())
             else:
                 self.runs.update_job(job["id"], status)
+
+        jobs = self.runs.jobs(run_id)
+        for host in {job["host"] for job in jobs}:
+            host_jobs = [job for job in jobs if job["host"] == host]
+            statuses = {job["status"] for job in host_jobs}
+            task_id = next((job["task_id"] for job in reversed(host_jobs)
+                            if job["task_id"]), None)
+            if statuses & {"failed", "unknown"}:
+                state = "failed"
+            elif statuses & {"pending", "running"}:
+                state = "running"
+            elif statuses <= {"succeeded", "skipped"}:
+                state = "succeeded"
+            else:
+                state = "pending"
+            detail = ", ".join(f"{job['stage']}={job['status']}" for job in host_jobs)
+            self.runs.set_host_state(run_id, host, state, task_id=task_id, detail=detail)
         return self.runs.run(run_id)
 
     def finish(self, run_id, report):

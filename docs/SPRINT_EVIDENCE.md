@@ -14,7 +14,7 @@ Legend: ✅ code/tests/docs delivered · 🟡 delivered but live evidence pendin
 | Abderaouf | `inspect.yml` versioned evidence; fixed templates | `playbooks/inspect.yml`, `playbooks/library/inspect_packages.py`, `agent` evidence upload | `tests/test_inspect.py`, `tests/agent/test_business.py` | 🟡 |
 | Wassim | Evidence contract, freshness, collector, approval | `patch_agent/evidence.py`, `collector.py`, `approval.py`, tenant evidence store | `tests/test_collector.py`, `test_evidence_readiness.py`, `tests/agent` | 🟡 |
 | Baha | Advisory/assessment contracts, version helpers, fixture spec | `schemas/`, `patch_agent/assessment.py`, `debversion.py`, `assessment_builder.py`, `docs/vulnerable-fixture.md` | `tests/test_assessment.py`, `test_assessment_builder.py` | 🟡 |
-| Dhia | CI, MCP/approval/collector tests, live checklist | `.github/workflows/ci.yml`, `tests/`, `scripts/check_env.py`, agent contract tests | CI + 519 local tests | 🟡 |
+| Dhia | CI, MCP/approval/collector tests, live checklist | `.github/workflows/ci.yml`, `tests/`, `scripts/check_env.py`, agent contract tests | CI + 522 local tests | 🟡 |
 | Ahmed | Runbook, interface decisions, fixture/reset, blockers | `docs/runbook.md`, `docs/interfaces.md`, `docs/AGENT_DELIVERY.md`, `agent.manifest.json` | artifact checks, manifest schema | 🟡 |
 
 ## Sprint 2 — Security assessment and execution preparation
@@ -66,7 +66,7 @@ Legend: ✅ code/tests/docs delivered · 🟡 delivered but live evidence pendin
 ## Verification
 
 ```bash
-python -m pytest -q                 # 519 passed, 400 skipped locally
+python -m pytest -q                 # 522 passed, 400 skipped locally
 python -m pytest tests/agent -q     # 15 passed
 python scripts/check_artifacts.py
 python scripts/update_progress.py --check

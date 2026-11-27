@@ -104,6 +104,39 @@ def test_refresh_records_terminal_status(tmp_path, plan, evidence):
     assert job["status"] == "failed" and job["finished_at"] is not None
 
 
+def test_begin_initializes_every_target_as_pending(tmp_path, plan, evidence):
+    store, digest = approved_store(tmp_path, plan, evidence)
+    subject = facade(tmp_path, store, FakeTransport())
+    subject.begin(plan["run_id"], digest)
+    states = {row["host"]: row["status"] for row in subject.runs.host_states(plan["run_id"])}
+    assert states == {"vm-01": "pending", "vm-02": "pending", "vm-03": "pending"}
+
+
+def test_refresh_tracks_per_host_state_and_task_id(tmp_path, plan, evidence):
+    store, digest = approved_store(tmp_path, plan, evidence)
+    transport = FakeTransport()
+    subject = facade(tmp_path, store, transport)
+    subject.begin(plan["run_id"], digest)
+    started = subject.start_stage(plan["run_id"], "vm-01", "preflight")
+    transport.statuses[started["task_id"]] = "failed"
+    subject.refresh(plan["run_id"])
+    states = {row["host"]: row for row in subject.runs.host_states(plan["run_id"])}
+    assert states["vm-01"]["status"] == "failed"
+    assert states["vm-01"]["task_id"] == started["task_id"]
+    assert states["vm-02"]["status"] == "pending"
+
+
+def test_host_states_survive_a_new_store_instance(tmp_path, plan, evidence):
+    store, digest = approved_store(tmp_path, plan, evidence)
+    subject = facade(tmp_path, store, FakeTransport())
+    subject.begin(plan["run_id"], digest)
+    subject.start_stage(plan["run_id"], "vm-01", "preflight")
+    reopened = RunStore(tmp_path)
+    states = {row["host"]: row["status"] for row in reopened.host_states(plan["run_id"])}
+    assert states["vm-01"] == "running"
+    assert states["vm-02"] == "pending"
+
+
 def test_template_map_rejects_missing_or_unknown_entries():
     with pytest.raises(ValueError, match="missing"):
         TemplateMap({"inspect": 1})

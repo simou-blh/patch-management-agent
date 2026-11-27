@@ -8,8 +8,8 @@ AI-assisted patch management for Debian fleets: inventory, security update prior
 ```text
 Sprint 1  Lab & trusted evidence  [████████████░░░░░░░░]  60%  2/5 full checkpoints
 Sprint 2  Assessment & readiness  [███████████████░░░░░]  75%  3/5 full checkpoints
-Sprint 3  Canary & recovery       [████████░░░░░░░░░░░░]  40%  2/5 full checkpoints
-Sprint 4  Fleet & delivery        [░░░░░░░░░░░░░░░░░░░░]   0%  0/5 full checkpoints
+Sprint 3  Canary & recovery       [████████████████░░░░]  80%  4/5 full checkpoints
+Sprint 4  Fleet & delivery        [████████░░░░░░░░░░░░]  40%  2/5 full checkpoints
 ```
 
 Verified checkpoints and substeps · [Criteria and evidence](plan.md#5-sprint-progress).

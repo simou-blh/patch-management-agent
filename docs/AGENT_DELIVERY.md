@@ -203,7 +203,7 @@ request.
 ```bash
 git switch dhya/full-project
 git status --short                # only intended files
-python -m pytest -q               # 519 passed, 400 skipped locally
+python -m pytest -q               # 522 passed, 400 skipped locally
 python scripts/check_artifacts.py
 python scripts/update_progress.py --check
 git diff --check

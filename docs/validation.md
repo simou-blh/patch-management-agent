@@ -388,8 +388,9 @@ Added:
   `blocked`/`succeeded`/`failed`/`partial`/`aborted` reports with job and recovery
   records (`tests/test_report.py`, 8 tests). The existing blocked report stays valid.
 - `patch_agent/executor.py` — approval-bound facade with fixed logical-template mapping,
-  duplicate-run blocking, revalidation before each stage, and durable task/log records
-  (`tests/test_executor.py`, 7 tests). The transport is injected; no live Semaphore
+  duplicate-run blocking, revalidation before each stage, durable task/log records and
+  per-host pending/running/succeeded/failed/skipped states that survive a reopened store
+  (`tests/test_executor.py`, 10 tests). The transport is injected; no live Semaphore
   adapter is committed.
 - `patch_agent/coordinator.py` — canary then sequential fleet, stop on first failure,
   recovery only on the affected host, fleet disabled by default
@@ -415,7 +416,7 @@ local/contract testing; no Noyau instance, VM or Semaphore task is started here.
 
 | Check | Command | Result | Tag |
 |---|---|---|---|
-| Full suite | `./.venv/bin/python -m pytest -q` | **519 passed, 400 skipped** | `VERIFIED-LOCAL` |
+| Full suite | `./.venv/bin/python -m pytest -q` | **522 passed, 400 skipped** | `VERIFIED-LOCAL` |
 | Agent contract tests | `./.venv/bin/python -m pytest tests/agent -q` | **15 passed** | `VERIFIED-LOCAL` |
 | Manifest schema | `tests/agent/test_submission.py` | valid manifest + flattened submission payload | `VERIFIED-LOCAL` |
 | Docker image | `docker build -t patch-management-agent:test .` | build success; in-container `/health` returned the standard envelope | `VERIFIED-LOCAL` |
