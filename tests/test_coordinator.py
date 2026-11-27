@@ -38,6 +38,14 @@ def run(runner, *, allow_fleet=False):
     return Coordinator(runner).run(PLAN, plan_hash=HASH, allow_fleet=allow_fleet)
 
 
+def test_canary_can_be_any_selected_host():
+    runner = FakeRunner()
+    report = Coordinator(runner).run(dict(PLAN, canary="vm-02"), plan_hash=HASH)
+    assert runner.calls == [("preflight", "vm-02"), ("patch", "vm-02"), ("verify", "vm-02")]
+    skipped = {job["host"] for job in report["jobs"] if job["status"] == "skipped"}
+    assert skipped == {"vm-01", "vm-03"}
+
+
 def test_canary_only_when_fleet_is_disabled():
     runner = FakeRunner()
     report = run(runner)

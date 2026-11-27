@@ -66,8 +66,11 @@ class Coordinator:
             jobs.append(_job(host, stage, result))
             return result
 
-        def stop_remaining(start_index, reason):
-            for host in targets[start_index:]:
+        def stop_remaining(reason):
+            processed = {job["host"] for job in jobs}
+            for host in targets:
+                if host in processed:
+                    continue
                 for stage in STAGE_ORDER:
                     jobs.append(_skipped(host, stage))
             verified = any(job["stage"] == "verify" and job["status"] == "succeeded"
@@ -80,40 +83,40 @@ class Coordinator:
 
         preflight = call(canary, "preflight")
         if jobs[-1]["status"] != "succeeded":
-            return stop_remaining(targets.index(canary) + 1,
+            return stop_remaining(
                                   "canary preflight failed; no host was modified")
 
         patch = call(canary, "patch")
         if jobs[-1]["status"] != "succeeded":
             recovery.append(_recovery(canary, self.runner.recover(canary)))
-            return stop_remaining(targets.index(canary) + 1,
+            return stop_remaining(
                                   "canary patch failed; recovery attempted on the canary only")
 
         verify = call(canary, "verify")
         if jobs[-1]["status"] != "succeeded":
             recovery.append(_recovery(canary, self.runner.recover(canary)))
-            return stop_remaining(targets.index(canary) + 1,
+            return stop_remaining(
                                   "canary verification failed; recovery attempted on the canary only")
 
         if not allow_fleet:
-            return stop_remaining(targets.index(canary) + 1,
+            return stop_remaining(
                                   "canary verified; fleet rollout is disabled")
 
         fleet = [host for host in targets if host != canary]
         for index, host in enumerate(fleet):
             preflight = call(host, "preflight")
             if jobs[-1]["status"] != "succeeded":
-                return stop_remaining(targets.index(host) + 1,
+                return stop_remaining(
                                       f"{host} preflight failed; later hosts were not touched")
             call(host, "patch")
             if jobs[-1]["status"] != "succeeded":
                 recovery.append(_recovery(host, self.runner.recover(host)))
-                return stop_remaining(targets.index(host) + 1,
+                return stop_remaining(
                                       f"{host} patch failed; recovery attempted on that host only")
             call(host, "verify")
             if jobs[-1]["status"] != "succeeded":
                 recovery.append(_recovery(host, self.runner.recover(host)))
-                return stop_remaining(targets.index(host) + 1,
+                return stop_remaining(
                                       f"{host} verification failed; recovery attempted on that host only")
 
         return build_report(
