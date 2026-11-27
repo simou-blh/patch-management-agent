@@ -72,6 +72,8 @@ Trust boundaries:
 - Semaphore (Docker image pinned in `compose.yml`).
 - The Python dependencies pinned in `pyproject.toml`:
   `mcp==2.3.0`, `jsonschema==4.26.0`; dev: `pytest==9.1.1`, `PyYAML==6.0.3`.
+- The teacher-platform agent runtime is installed from `requirements-agent.txt`
+  (`fastapi==0.165.0`, `httpx==0.27.2`, `uvicorn==0.54.0`, `jsonschema==4.26.0`).
 
 ```bash
 python -m venv .venv
@@ -360,3 +362,26 @@ ping/auth. Results are recorded separately from mocked tests.
 - Sprint completion still requires the live lab gates: real inventory, a real assessment,
   a real canary, recovery and reports, plus teammate confirmations. Code and synthetic
   tests alone are not live evidence.
+
+## 16. Teacher platform agent
+
+The repository now also delivers the teacher-platform **agent** described in
+[docs/AGENT_DELIVERY.md](AGENT_DELIVERY.md):
+
+- `agent.manifest.json` — `filiere: cybersecurite`, category `patch_management`
+- `agent/` — FastAPI service exposing the 5 mandatory endpoints with the standard
+  envelope, tenant isolation, config schema and Noyau webhook alerts
+- `Dockerfile` + `requirements-agent.txt`
+- `scripts/submit_agent.py` — adapter for the Noyau’s flattened submission schema
+- `scripts/agent_smoke.py` — local 5-endpoint smoke test
+- `tests/agent/` — contract, isolation, webhook and business tests
+
+Run it separately from the Noyau:
+
+```bash
+uvicorn agent.main:create_app --factory --host 0.0.0.0 --port 9000
+```
+
+`Seba/` (teacher reference kernel) is ignored and never committed; the Noyau runs from a
+separate folder. See the delivery guide for submission, certification, subscription,
+tenant isolation, purge, webhook and push instructions.

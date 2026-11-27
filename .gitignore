@@ -232,3 +232,9 @@ noyau-local/
 *.key
 lab/semaphore_known_hosts
 __temp__/
+
+# Teacher reference material and private planning (never commit)
+Seba/
+Seba*/
+Plan/
+agent-data/

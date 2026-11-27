@@ -21,6 +21,6 @@ For any addition, fix, or modification, create your own branch and open a PR to 
 
 For more details, check the [details file](detailes.md).
 
-[Setup](SETUP.md) · [Full configuration guide](README-FULL.md) · [Team plan](plan.md)
+[Setup](SETUP.md) · [Full configuration guide](README-FULL.md) · [Agent delivery](docs/AGENT_DELIVERY.md) · [Team plan](plan.md)
 
 ![Project architecture](architecture-black.svg)

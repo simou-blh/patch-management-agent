@@ -14,7 +14,7 @@ import re
 import sys
 import tomllib
 
-from jsonschema import Draft202012Validator, SchemaError
+from jsonschema import Draft202012Validator, SchemaError, ValidationError
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -249,6 +249,49 @@ def check_pins(root: Path) -> list[str]:
     ]
 
 
+def check_agent_manifest(root: Path) -> list[str]:
+    problems = []
+    manifest_path = root / "agent.manifest.json"
+    schema_path = root / "schemas/agent.manifest.schema.json"
+    try:
+        manifest = read_json(manifest_path)
+        schema = read_json(schema_path)
+        Draft202012Validator(schema).validate(manifest)
+    except (OSError, ValueError, ValidationError) as exc:
+        return [f"{manifest_path}: invalid or missing agent manifest: {exc}"]
+
+    if manifest.get("slug") != "patch-management-agent":
+        problems.append(f"{manifest_path}: slug must be patch-management-agent")
+    if manifest.get("filiere") != "cybersecurite":
+        problems.append(f"{manifest_path}: filiere must be cybersecurite")
+    if manifest.get("produces") or manifest.get("consumes"):
+        problems.append(f"{manifest_path}: this agent uses only the alert webhook")
+    expected = {
+        "health": "/health",
+        "activate": "/tenant/activate",
+        "deactivate": "/tenant/deactivate",
+        "status": "/tenant/{tenant_id}/status",
+        "config_schema": "/config-schema",
+        "exchange_notify": "/exchange/notify",
+    }
+    endpoints = manifest.get("endpoints", {})
+    for key, path in expected.items():
+        if endpoints.get(key) != path:
+            problems.append(f"{manifest_path}: endpoints.{key} must be {path}")
+
+    dockerfile = root / "Dockerfile"
+    try:
+        text = dockerfile.read_text(encoding="utf-8")
+    except OSError as exc:
+        problems.append(f"{dockerfile}: missing Dockerfile: {exc}")
+        return problems
+    if "agent.main:create_app" not in text or "--factory" not in text:
+        problems.append(f"{dockerfile}: must run the agent factory")
+    if "9000" not in text:
+        problems.append(f"{dockerfile}: must expose port 9000")
+    return problems
+
+
 def check_all(root=ROOT) -> list[str]:
     root = Path(root)
     problems = []
@@ -260,6 +303,7 @@ def check_all(root=ROOT) -> list[str]:
     problems += check_playbooks(root)
     problems += check_workflow(root)
     problems += check_pins(root)
+    problems += check_agent_manifest(root)
     return problems
 
 

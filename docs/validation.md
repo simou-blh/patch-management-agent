@@ -406,3 +406,45 @@ Not yet done: a live Semaphore transport adapter, a live runner for the coordina
 real advisory feed, a real assessment of lab evidence, and live canary/recovery through
 the facade. Those remain Sprint 2/3/4 live gates; no synthetic result is presented as
 live evidence.
+
+## Update 2026-11-27 (teacher-platform agent contract)
+
+The teacher Noyau contract is implemented as an independent FastAPI service under
+`agent/`, with `agent.manifest.json`, `Dockerfile` and `requirements-agent.txt`. This is
+local/contract testing; no Noyau instance, VM or Semaphore task is started here.
+
+| Check | Command | Result | Tag |
+|---|---|---|---|
+| Full suite | `./.venv/bin/python -m pytest -q` | **519 passed, 400 skipped** | `VERIFIED-LOCAL` |
+| Agent contract tests | `./.venv/bin/python -m pytest tests/agent -q` | **15 passed** | `VERIFIED-LOCAL` |
+| Manifest schema | `tests/agent/test_submission.py` | valid manifest + flattened submission payload | `VERIFIED-LOCAL` |
+| Docker image | `docker build -t patch-management-agent:test .` | build success; in-container `/health` returned the standard envelope | `VERIFIED-LOCAL` |
+| Host port mapping | `curl` to the mapped port | blocked by the local Docker networking; the container health probe and in-container call passed | `NOT-VERIFIED` |
+| JSON/YAML artifacts | `python scripts/check_artifacts.py` | pass | `VERIFIED-LOCAL` |
+
+Implemented:
+
+- `GET /health`, `POST /tenant/activate`, `POST /tenant/deactivate`,
+  `GET /tenant/{tenant_id}/status`, `GET /config-schema`, and a safe
+  `POST /exchange/notify` no-op.
+- Standard `{status, data, error}` envelope on success and on HTTP/validation errors.
+- Per-tenant hashed directories with evidence, advisories, assessment, preflight, plans
+  and reports; deactivation removes the tenant directory and row.
+- Tenant authentication from `X-Tenant-Id` + Bearer key; wrong tenant → 404, wrong key →
+  403.
+- Noyau webhook events: `patch_affected`, `patch_plan_ready`, `patch_preflight_blocked`,
+  with severity mapping and failure tolerance.
+- Business endpoints: evidence, advisories, assess, plans, preflight, status, and
+  operator-only runs (disabled by default; 503 without a live runner).
+- `scripts/submit_agent.py` maps the nested manifest to the Noyau’s flattened
+  `AgentManifestSubmission`; `scripts/agent_smoke.py` checks the five mandatory routes.
+
+Not yet done: a real Noyau integration run (certification/subscription), a live runner
+adapter, and live lab evidence. The teacher reference kernel lives outside Git in
+`Seba/`, which is ignored and never committed.
+
+The core CI install does not include FastAPI/httpx; `tests/agent/` is skipped there via
+`pytest.importorskip`. The agent suite is verified locally with
+`requirements-agent.txt` and by the Docker `/health` check. A maintainer with GitHub
+`workflow` scope should add `fastapi==0.165.0`, `httpx==0.27.2` and `uvicorn==0.54.0` to
+the CI install step to run it there.
