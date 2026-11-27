@@ -203,12 +203,12 @@ scenario table in [plan.md](../plan.md). None runs against a real lab yet.
 
 | # | Blocker | Owner | Notes |
 |---|---|---|---|
-| 1 | The real lab has not been brought up: VMs, SSH from WSL, Docker-to-host-only routing, Semaphore. | Taha | Everything tagged `PENDING-LIVE` depends on it. See the live gates in [SETUP.md](../SETUP.md). |
+| 1 | The lab and Semaphore were brought up on 2026-11-17/18 according to [semaphore-setup.md](semaphore-setup.md), but no live run is recorded in [validation.md](validation.md) yet (VMs, SSH from WSL, Docker-to-host-only routing, Semaphore `inspect` run). | Taha | Everything tagged `PENDING-LIVE` depends on it. See the live gates in [SETUP.md](../SETUP.md). |
 | 2 | Bootstrap with pinned SHA-256 is merged in [PR #8](https://github.com/simou-blh/patch-management-agent/pull/8); signed-package verification and real VM installation remain unverified. | Taha | Operator command: see [SETUP.md section 4](../SETUP.md#4-ssh-and-osquery). Required before accepting S1.1. |
 | 3 | Transitive Python dependencies are not locked in Git; `uv.lock` is generated locally and untracked. | Taha | Review and commit once; others pull it. |
 | 4 | The operator importer accepts contract-v1 exports and `inspect.yml` now emits them (read-only run verified on vm-01/vm-02/vm-03 from WSL, outside Semaphore); trusted Semaphore transport is unverified. | Abderaouf, Wassim, Taha | S1.2c merge and the live S1.3 handoff remain pending; do not fabricate exports. |
 | 5 | Import/submission enforce freshness and complete successful host results; the operator age limit and producer/consumer agreement still need team confirmation. | Wassim | Explicit policy is required (S1.2b); see [SETUP.md](../SETUP.md) for configuration and legacy-file handling. |
-| 6 | `semaphore/templates.json` is a design list; no Semaphore project, credentials or template IDs exist. | Taha, Abderaouf | S1.2d. |
+| 6 | `semaphore/templates.json` is a design list. A Semaphore project and the five template IDs now exist (`semaphore/ids.json`, [semaphore-setup.md](semaphore-setup.md)); only the `inspect` run is documented, and the other templates are not yet shown to run. | Taha, Abderaouf | S1.2d. |
 | 7 | Debian version helpers are merged in [PR #6](https://github.com/simou-blh/patch-management-agent/pull/6); advisory/assessment contracts and matching remain pending. | Baha | S1.4a records helper verification; remaining contracts/fixtures belong to Sprint 1, matching to Sprint 2. |
 | 8 | Box availability: the pinned Bento version must still be downloadable when the lab is built, and its real size is unmeasured. | Taha | Check before downloading; see [download-budget.md](download-budget.md). |
 | 9 | **Resolved:** verification results are dated and installed-tool notes identify the original machine. | Ahmed | [PR #5](https://github.com/simou-blh/patch-management-agent/pull/5) merged on 2026-11-04; the original validation record remains preserved. |
