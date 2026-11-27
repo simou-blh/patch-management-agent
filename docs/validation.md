@@ -314,3 +314,49 @@ remain. The recovery contract no longer rejects a successful repair without a pa
 restore; a manual-intervention record must instead show a failure, an error or
 package-manager issues. The full happy-path scenario (23 checks) passed again afterwards,
 and the Linux CI build passed with 841 tests.
+
+## Update 2026-11-27 (Sprint 2 test batch on dhya/sprint2-3+review)
+
+Review branch `dhya/sprint2-3+review` at merge `7e78843` integrates Abderaouf's
+`origin/raouf` commits; his authorship is preserved. This section records only local
+synthetic/contract checks. No live data is added, raw logs stay outside Git and
+deployment remains blocked.
+
+| Check | Command | Result | Tag |
+|---|---|---|---|
+| Full suite | `./.venv/bin/python -m pytest -q` | **452 passed, 400 skipped** | `VERIFIED-LOCAL` |
+| JSON/YAML artifact checks | `python scripts/check_artifacts.py` | “All JSON/YAML artifacts passed.” | `VERIFIED-LOCAL` |
+| Sprint progress bars | `python scripts/update_progress.py --check` | “README sprint bars are current.” | `VERIFIED-LOCAL` |
+| Whitespace errors | `git diff --check` | clean | `VERIFIED-LOCAL` |
+
+The 400 skips remain the `dpkg --compare-versions` cross-checks; the Ubuntu CI runner
+executes them.
+
+S1.5b is ticked in `plan.md` from already-merged work: PR #9, the recorded CI run and the
+collector/readiness/partial-host tests. S2.5 is split into four unchecked substeps so its
+remaining work can be reviewed separately.
+
+S2.5a added four contract tests for Debian semantics: a revision suffix that does not
+reach the fixed revision cannot be proposed (`test_revision_suffix_decides_the_source_comparison`),
+tilde versions sort before the fix (`test_tilde_source_version_is_before_the_fix`), a
+binary epoch does not override the source comparison
+(`test_binary_epoch_does_not_override_the_source_comparison`) and epoch zero equals a
+missing epoch (`test_epoch_zero_equals_a_missing_epoch_in_assessment`). Source mapping and
+binary/source fixture tests were already present and were not duplicated.
+
+S2.5b added scope-removal refusal and patch simulation/install timeout tests
+(`tests/test_patch.py`). Dependency-expansion, invalid-policy and failed
+backup/artifact coverage from the merged playbook work was audited and left intact.
+A failed preflight still cannot block execution, because `submit_plan` does not consume
+preflight evidence (S2.3, Wassim); no test pretends otherwise.
+
+Sprint 3 groundwork added rejection of an unknown run ID (`tests/test_approval.py`) and
+systemd health-check timeout and probe-failure paths (`tests/test_verify.py`). The
+remaining Sprint 3 test work is blocked on real interfaces: changed template mapping and
+duplicate runs need the execution facade (S3.1), and coordinator-level failure handling
+and the extended report need S3.4. Live canary cases need lab access and Taha's run.
+
+Not yet done: stale advisory-cache freshness and unavailable-fixed-version matching
+(S2.2, Baha); the assessment-to-plan MCP integration (S2.5c); a real assessment (S2.5d);
+live canary/recovery scenarios for this branch (S3.5). No checkpoint other than S1.5b is
+ticked.
