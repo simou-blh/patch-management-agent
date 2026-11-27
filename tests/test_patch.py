@@ -356,3 +356,52 @@ def test_apply_patch_installs_when_dependencies_are_approved(monkeypatch):
         "openssh-server", "amd64", U7, approved, True, check_mode=False)
     assert error is None and changed is True and after == U7
     assert "-s" in calls[0] and "-y" in calls[1] and "openssh-server:amd64=" + U7 in calls[1]
+
+
+def test_scope_violations_reject_removals():
+    problems = patch_module.scope_violations(
+        "Remv libfoo1:amd64 [1.0-1]\n", {"openssh-server": U7})
+    assert problems == ["would remove libfoo1"]
+
+
+def test_apply_patch_reports_simulation_failure(monkeypatch):
+    def fake_run(command, **kwargs):
+        return patch_module.subprocess.CompletedProcess(command, 100, "", "E: simulated failure")
+
+    monkeypatch.setattr(patch_module.subprocess, "run", fake_run)
+    changed, after, error = patch_module.apply_patch(
+        "openssh-server", "amd64", U7, {"openssh-server": U7}, True, check_mode=False)
+    assert (changed, after) == (False, None)
+    assert error["code"] == "apt_simulation_failed"
+    assert "exited 100" in error["message"]
+
+
+def test_apply_patch_reports_simulation_timeout(monkeypatch):
+    def fake_run(command, **kwargs):
+        raise patch_module.subprocess.TimeoutExpired(command, 300)
+
+    monkeypatch.setattr(patch_module.subprocess, "run", fake_run)
+    changed, after, error = patch_module.apply_patch(
+        "openssh-server", "amd64", U7, {"openssh-server": U7}, True, check_mode=False)
+    assert (changed, after) == (False, None)
+    assert error["code"] == "apt_simulation_failed"
+    assert error["message"] == "TimeoutExpired"
+
+
+def test_apply_patch_reports_install_timeout(monkeypatch):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        if "-s" in command:
+            return patch_module.subprocess.CompletedProcess(command, 0, OPENSSH_SIM, "")
+        raise patch_module.subprocess.TimeoutExpired(command, 300)
+
+    monkeypatch.setattr(patch_module.subprocess, "run", fake_run)
+    approved = {"openssh-server": U7, "openssh-client": U7, "openssh-sftp-server": U7}
+    changed, after, error = patch_module.apply_patch(
+        "openssh-server", "amd64", U7, approved, True, check_mode=False)
+    assert (changed, after) == (False, None)
+    assert error["code"] == "patch_timeout"
+    assert "timed out" in error["message"]
+    assert len(calls) == 2
