@@ -336,10 +336,39 @@ def validate_patch_scope(expectations, installed, candidates, policy):
     return results
 
 
-def apply_patch(name, architecture, target_version, services, deployment_unblocked, check_mode=True):
+_SIM_INSTALL = re.compile(r"^Inst (\S+) (?:\[[^\]]*\] )?\((\S+) ")
+
+
+def simulated_changes(output):
+    """Parse ``apt-get -s`` output into ``({package: new_version}, [removed])``."""
+    installs, removals = {}, []
+    for line in output.splitlines():
+        match = _SIM_INSTALL.match(line)
+        if match:
+            installs[match.group(1).partition(":")[0]] = match.group(2)
+        elif line.startswith("Remv "):
+            removals.append(line.split()[1].partition(":")[0])
+    return installs, removals
+
+
+def scope_violations(output, approved):
+    """List APT changes outside ``approved`` ({package: exact version})."""
+    installs, removals = simulated_changes(output)
+    problems = [f"would remove {name}" for name in removals]
+    for name, version in sorted(installs.items()):
+        if name not in approved:
+            problems.append(f"would change unapproved package {name} to {version}")
+        elif approved[name] != version:
+            problems.append(f"would install {name} {version}, approved {approved[name]}")
+    return problems
+
+
+def apply_patch(name, architecture, target_version, approved, deployment_unblocked, check_mode=True):
     """Install ``target_version`` for ``name`` only when unblocked and not in check mode.
 
-    Returns ``(changed, installed_after, error)``.
+    The change is simulated first and refused unless every package APT would
+    touch is in ``approved`` ({package: exact target version}) and nothing is
+    removed. Returns ``(changed, installed_after, error)``.
     """
     if not deployment_unblocked:
         return False, None, {"code": "deployment_blocked", "message": "live execution is blocked by the foundation gate"}
@@ -347,7 +376,23 @@ def apply_patch(name, architecture, target_version, services, deployment_unblock
         return False, None, None
 
     package_spec = f"{name}:{architecture}={target_version}" if architecture else f"{name}={target_version}"
-    command = ["apt-get", "install", "--no-install-recommends", "-y", package_spec]
+    apt_env = {**os.environ, "LC_ALL": "C", "LANG": "C", "DEBIAN_FRONTEND": "noninteractive"}
+    try:
+        simulation = subprocess.run(
+            ["apt-get", "install", "-s", "--no-install-recommends", package_spec],
+            capture_output=True, text=True, timeout=300, env=apt_env,
+        )
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        return False, None, {"code": "apt_simulation_failed", "message": type(exc).__name__}
+    if simulation.returncode != 0:
+        return False, None, {"code": "apt_simulation_failed",
+                             "message": f"apt simulation for {package_spec} exited {simulation.returncode}"}
+    problems = scope_violations(simulation.stdout, approved or {})
+    if problems:
+        return False, None, {"code": "scope_expansion", "message": "; ".join(problems)[:500]}
+
+    command = ["apt-get", "install", "--no-install-recommends", "-y",
+               "-o", "Dpkg::Options::=--force-confold", package_spec]
     try:
         result = subprocess.run(
             command, capture_output=True, text=True, timeout=300,
@@ -424,6 +469,8 @@ def execute_patch(validation, expectations, deployment_unblocked, check_mode=Tru
     or restarted unless deployment is unblocked and Ansible is not in check mode.
     """
     by_key = {(e["name"], e["architecture"]): e for e in expectations}
+    # Dependencies may move only to versions the operator approved in the same plan.
+    approved = {e["name"]: e["target_version"] for e in expectations if e["action"] == "patch"}
     results = []
     for entry in validation:
         expectation = by_key[(entry["name"], entry["architecture"])]
@@ -436,7 +483,7 @@ def execute_patch(validation, expectations, deployment_unblocked, check_mode=Tru
             continue
 
         changed, installed_after, apply_error = apply_patch(
-            entry["name"], entry["architecture"], expectation["target_version"], None,
+            entry["name"], entry["architecture"], expectation["target_version"], approved,
             deployment_unblocked, check_mode,
         )
         if apply_error:
@@ -541,7 +588,8 @@ def main():
         results = execute_patch(validation, expectations,
                                 module.params["deployment_unblocked"], module.check_mode)
 
-        module.exit_json(changed=False, **host_result(results, collected_at))
+        changed = any(result["status"] == "applied" for result in results)
+        module.exit_json(changed=changed, **host_result(results, collected_at))
     except Exception as exc:  # noqa: BLE001 - never leak credentials
         module.exit_json(changed=False, **error_result(f"Patch failed ({type(exc).__name__})", collected_at))
 

@@ -252,3 +252,26 @@ def test_restore_config_backup_copies_and_verifies(tmp_path):
     result = recover_module.restore_config_backup(str(target), str(backup), True, False)
     assert result["result"] == "succeeded"
     assert target.read_text() == "Port 22\n"
+
+
+def test_restore_previous_packages_uses_one_transaction(monkeypatch):
+    u5 = "1:9.2p1-2+deb12u5"
+    sim = "".join(f"Inst {n} [1:9.2p1-2+deb12u7] ({u5} Debian-Security:12 [amd64])\n"
+                  for n in ("openssh-client", "openssh-server"))
+    calls = _fake_apt(monkeypatch, [(0, sim), (0, "done")], installed=u5)
+    entries = [{"name": n, "previous_version": u5, "architecture": "amd64"}
+               for n in ("openssh-server", "openssh-client")]
+    records = recover_module.restore_previous_packages(entries, True, False)
+    apt_calls = [c for c in calls if c[0] == "apt-get"]
+    assert len(apt_calls) == 2  # one simulation, one real run, for both packages
+    assert f"openssh-server:amd64={u5}" in apt_calls[1] and f"openssh-client:amd64={u5}" in apt_calls[1]
+    assert [r["result"] for r in records] == ["succeeded", "succeeded"]
+
+
+def test_restore_previous_packages_refuses_unlisted_change(monkeypatch):
+    sim = "Inst libssl3 [3.0.15-1] (3.0.11-1 Debian:12 [amd64])\n"
+    calls = _fake_apt(monkeypatch, [(0, sim)])
+    entries = [{"name": "openssh-server", "previous_version": "1:9.2p1-2+deb12u5", "architecture": "amd64"}]
+    records = recover_module.restore_previous_packages(entries, True, False)
+    assert len(calls) == 1 and records[0]["result"] == "failed"
+    assert "unapproved package libssl3" in records[0]["detail"]

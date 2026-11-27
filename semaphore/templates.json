@@ -1,10 +1,41 @@
 {
   "status": "design-only; not a Semaphore API import payload",
+  "notes": "Record real Semaphore template IDs in operator-owned config after project creation. Do not expose template IDs or mutation tools to the model.",
   "templates": [
-    {"name": "inspect", "playbook": "playbooks/inspect.yml", "kind": "read-only evidence v1 producer"},
-    {"name": "preflight", "playbook": "playbooks/preflight.yml", "kind": "read-only readiness; mutation blocked"},
-    {"name": "patch", "playbook": "playbooks/patch.yml", "kind": "simulate-only exact-version patch; deployment blocked"},
-    {"name": "verify", "playbook": "playbooks/verify.yml", "kind": "read-only observed-version verification"},
-    {"name": "recover", "playbook": "playbooks/recover.yml", "kind": "simulate-only recovery; deployment blocked"}
+    {
+      "name": "inspect",
+      "playbook": "playbooks/inspect.yml",
+      "kind": "read-only evidence v1 producer",
+      "sprint_1_read_only_mapping": true,
+      "output_schema": "schemas/evidence.schema.json"
+    },
+    {
+      "name": "preflight",
+      "playbook": "playbooks/preflight.yml",
+      "kind": "read-only readiness; mutation blocked",
+      "sprint_1_read_only_mapping": true,
+      "output_schema": "schemas/preflight.schema.json"
+    },
+    {
+      "name": "patch",
+      "playbook": "playbooks/patch.yml",
+      "kind": "simulate-only exact-version patch; deployment blocked",
+      "deployment_unblocked_default": false,
+      "output_schema": "schemas/patch.schema.json"
+    },
+    {
+      "name": "verify",
+      "playbook": "playbooks/verify.yml",
+      "kind": "read-only observed-version/health verification",
+      "sprint_1_read_only_mapping": true,
+      "output_schema": "schemas/verify.schema.json"
+    },
+    {
+      "name": "recover",
+      "playbook": "playbooks/recover.yml",
+      "kind": "simulate-only recovery; deployment blocked",
+      "deployment_unblocked_default": false,
+      "output_schema": "schemas/recover.schema.json"
+    }
   ]
 }

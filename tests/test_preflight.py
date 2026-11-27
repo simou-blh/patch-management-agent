@@ -463,3 +463,14 @@ def test_cache_previous_packages_reports_unobtainable_version(tmp_path):
 def test_cache_previous_packages_rejects_relative_dir():
     specs, errors = preflight.cache_previous_packages("cache", [], None)
     assert specs == [] and errors
+
+
+def test_rollback_scope_limits_cached_packages():
+    expectations = preflight.normalize_expectations([
+        {"name": "openssh-server", "expected_installed": "1:9.2p1-2+deb12u7", "target_version": "1:9.2p1-2+deb12u10"},
+        {"name": "libssl3", "expected_installed": "3.0.17-1~deb12u3", "target_version": "3.0.22-1~deb12u2"},
+    ])
+    assert preflight.rollback_scope(expectations, None) == expectations
+    assert [e["name"] for e in preflight.rollback_scope(expectations, ["openssh-server"])] == ["openssh-server"]
+    with pytest.raises(ValueError, match="without expectations"):
+        preflight.rollback_scope(expectations, ["openssh-client"])

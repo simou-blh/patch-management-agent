@@ -162,8 +162,37 @@ def planned_removals(simulation_output):
     return removals
 
 
-def _bounded_apt(args):
+_SIM_INSTALL = re.compile(r"^Inst (\S+) (?:\[[^\]]*\] )?\((\S+) ")
+
+
+def simulated_changes(output):
+    """Parse ``apt-get -s`` output into ``({package: new_version}, [removed])``."""
+    installs, removals = {}, []
+    for line in output.splitlines():
+        match = _SIM_INSTALL.match(line)
+        if match:
+            installs[match.group(1).partition(":")[0]] = match.group(2)
+        elif line.startswith("Remv "):
+            removals.append(line.split()[1].partition(":")[0])
+    return installs, removals
+
+
+def scope_violations(output, allowed):
+    """List APT changes outside ``allowed`` ({package: exact version})."""
+    installs, removals = simulated_changes(output)
+    problems = [f"would remove {name}" for name in removals]
+    for name, version in sorted(installs.items()):
+        if name not in allowed:
+            problems.append(f"would change unapproved package {name} to {version}")
+        elif allowed[name] != version:
+            problems.append(f"would install {name} {version}, approved {allowed[name]}")
+    return problems
+
+
+def _bounded_apt(args, allowed=None):
     """Simulate ``apt-get args``; run it for real only if nothing is removed.
+
+    With ``allowed`` ({package: version}) every simulated change must match it.
 
     Returns ``(attempted, result, detail)``.
     """
@@ -176,6 +205,10 @@ def _bounded_apt(args):
     removals = planned_removals(simulation.stdout)
     if removals:
         return False, "failed", "refused: would remove " + ", ".join(removals[:20])
+    if allowed is not None:
+        problems = scope_violations(simulation.stdout, allowed)
+        if problems:
+            return False, "failed", "refused: " + "; ".join(problems)[:500]
     try:
         result = _apt([*args, "-y", *_KEEP_CONFIG])
     except subprocess.TimeoutExpired:
@@ -217,27 +250,48 @@ def bounded_apt_repair(deployment_unblocked, check_mode=True):
             "dry_run": False, "result": result, "detail": detail}
 
 
-def restore_previous_package(name, previous_version, architecture, deployment_unblocked, check_mode=True):
-    """Downgrade to the approved previous version and verify it is installed."""
-    base = f"{name}:{architecture}" if architecture else name
-    package_spec = f"{base}={previous_version}"
+def restore_previous_packages(entries, deployment_unblocked, check_mode=True):
+    """Restore every approved previous version in one APT transaction.
 
-    def record(attempted, result, detail):
-        return {"name": name, "previous_version": previous_version,
-                "architecture": architecture, "attempted": attempted,
+    Packages built together (for example openssh-server/-client/-sftp-server)
+    cannot be downgraded one at a time, so all specs go into one bounded APT
+    call; each version is then checked separately.
+    """
+    def record(entry, attempted, result, detail):
+        return {"name": entry["name"], "previous_version": entry["previous_version"],
+                "architecture": entry["architecture"], "attempted": attempted,
                 "result": result, "detail": detail}
 
+    if not entries:
+        return []
     if not deployment_unblocked or check_mode:
-        return record(False, "not_attempted",
-                      "live restoration is blocked until deployment is unblocked")
+        return [record(e, False, "not_attempted",
+                       "live restoration is blocked until deployment is unblocked") for e in entries]
+    specs, allowed = [], {}
+    for entry in entries:
+        base = f"{entry['name']}:{entry['architecture']}" if entry["architecture"] else entry["name"]
+        specs.append(f"{base}={entry['previous_version']}")
+        allowed[entry["name"]] = entry["previous_version"]
     attempted, result, detail = _bounded_apt(
-        ["install", "--no-install-recommends", "--allow-downgrades", package_spec])
+        ["install", "--no-install-recommends", "--allow-downgrades", *specs], allowed)
     if result != "succeeded":
-        return record(attempted, result, detail)
-    observed = _installed(name, architecture)
-    if observed != previous_version:
-        return record(True, "failed", f"after restore {base} is {observed}, expected {previous_version}")
-    return record(True, "succeeded", f"{base} restored to {previous_version}")
+        return [record(e, attempted, result, detail) for e in entries]
+    records = []
+    for entry in entries:
+        observed = _installed(entry["name"], entry["architecture"])
+        if observed != entry["previous_version"]:
+            records.append(record(entry, True, "failed",
+                                  f"after restore {entry['name']} is {observed}, expected {entry['previous_version']}"))
+        else:
+            records.append(record(entry, True, "succeeded",
+                                  f"{entry['name']} restored to {entry['previous_version']}"))
+    return records
+
+
+def restore_previous_package(name, previous_version, architecture, deployment_unblocked, check_mode=True):
+    """Restore one package; see ``restore_previous_packages``."""
+    entry = {"name": name, "previous_version": previous_version, "architecture": architecture}
+    return restore_previous_packages([entry], deployment_unblocked, check_mode)[0]
 
 
 def restore_config_backup(config_path, backup_path, deployment_unblocked, check_mode=True):
@@ -320,12 +374,9 @@ def main():
             module.params["deployment_unblocked"], module.check_mode,
         )
 
-        previous_restorations = []
-        for entry in previous:
-            previous_restorations.append(restore_previous_package(
-                entry["name"], entry["previous_version"], entry["architecture"],
-                module.params["deployment_unblocked"], module.check_mode,
-            ))
+        previous_restorations = restore_previous_packages(
+            previous, module.params["deployment_unblocked"], module.check_mode,
+        )
 
         config_restorations = []
         backup_root = module.params["backup_root"]
